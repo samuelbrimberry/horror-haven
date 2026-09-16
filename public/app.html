@@ -52,7 +52,11 @@
 
       <div class="chat-messages" id="messages"></div>
 
+      <div id="attachment-preview" class="attachment-preview" hidden></div>
+
       <form class="chat-input" id="chat-form">
+        <button class="btn btn-ghost" type="button" id="attach-btn" title="Attach image or video">📎</button>
+        <input type="file" id="attach-input" accept="image/*,video/*" hidden />
         <input id="chat-text" placeholder="Say something..." autocomplete="off" maxlength="500" />
         <button class="btn" type="submit">Send</button>
       </form>

@@ -314,6 +314,43 @@ footer {
 
 .report-btn:hover { color: var(--accent-bright); }
 
+.attachment-preview {
+  margin: 0 20px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel-2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.attachment-preview img,
+.attachment-preview video {
+  max-height: 48px;
+  border-radius: 6px;
+}
+
+.attachment-preview .remove-attachment {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--accent-bright);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.msg-attachment img,
+.msg-attachment video {
+  max-width: min(320px, 100%);
+  max-height: 320px;
+  border-radius: 10px;
+  margin-top: 6px;
+  display: block;
+}
+
 .chat-input {
   display: flex;
   gap: 10px;

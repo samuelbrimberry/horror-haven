@@ -21,6 +21,7 @@ let currentRoom = 'general';
 let currentRoomName = 'General';
 let socket = null;
 let roomsCache = [];
+let pendingAttachment = null;
 
 async function init() {
   const res = await fetch('/api/me');
@@ -126,8 +127,19 @@ function renderMessage(msg) {
   const time = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   el.innerHTML = `
     <div class="who ${isMe ? 'me' : ''}">${escapeHtml(msg.username)}<span class="time">${time}</span></div>
-    <div class="body">${escapeHtml(msg.text)}</div>
+    ${msg.text ? `<div class="body">${escapeHtml(msg.text)}</div>` : ''}
   `;
+
+  if (msg.attachmentUrl) {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg-attachment';
+    if (msg.attachmentType === 'video') {
+      wrap.innerHTML = `<video src="${msg.attachmentUrl}" controls></video>`;
+    } else {
+      wrap.innerHTML = `<img src="${msg.attachmentUrl}" alt="attachment" />`;
+    }
+    el.appendChild(wrap);
+  }
 
   if (!isMe) {
     const reportBtn = document.createElement('button');
@@ -177,14 +189,59 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function showAttachmentPreview() {
+  const preview = document.getElementById('attachment-preview');
+  if (!pendingAttachment) {
+    preview.hidden = true;
+    preview.innerHTML = '';
+    return;
+  }
+  preview.hidden = false;
+  const mediaHtml = pendingAttachment.type === 'video'
+    ? `<video src="${pendingAttachment.url}" muted></video>`
+    : `<img src="${pendingAttachment.url}" alt="attachment preview" />`;
+  preview.innerHTML = `${mediaHtml}<span>Ready to send</span>`;
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'remove-attachment';
+  removeBtn.textContent = 'Remove';
+  removeBtn.addEventListener('click', () => {
+    pendingAttachment = null;
+    showAttachmentPreview();
+  });
+  preview.appendChild(removeBtn);
+}
+
 function setupUi() {
   document.getElementById('chat-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const input = document.getElementById('chat-text');
     const text = input.value.trim();
-    if (!text) return;
-    socket.emit('message', { room: currentRoom, text });
+    if (!text && !pendingAttachment) return;
+    socket.emit('message', { room: currentRoom, text, attachment: pendingAttachment });
     input.value = '';
+    pendingAttachment = null;
+    showAttachmentPreview();
+  });
+
+  document.getElementById('attach-btn').addEventListener('click', () => {
+    document.getElementById('attach-input').click();
+  });
+
+  document.getElementById('attach-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) {
+      appendSystemMessage(data.error || 'Could not upload file.');
+      return;
+    }
+    pendingAttachment = { url: data.url, type: data.type };
+    showAttachmentPreview();
   });
 
   document.getElementById('logout-btn').addEventListener('click', async () => {

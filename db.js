@@ -25,6 +25,8 @@ async function init() {
     );
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS messages_room_idx ON messages (room, id);');
+  await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_url TEXT;');
+  await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_type TEXT;');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;');
@@ -117,6 +119,8 @@ function rowToMessage(row) {
     room: row.room,
     username: row.username,
     text: row.text,
+    attachmentUrl: row.attachment_url,
+    attachmentType: row.attachment_type,
     createdAt: row.created_at,
   };
 }
@@ -208,10 +212,11 @@ module.exports = {
     return rows.map(rowToUser);
   },
 
-  async addMessage(room, username, text) {
+  async addMessage(room, username, text, attachmentUrl = null, attachmentType = null) {
     const { rows } = await pool.query(
-      'INSERT INTO messages (room, username, text) VALUES ($1, $2, $3) RETURNING *',
-      [room, username, text]
+      `INSERT INTO messages (room, username, text, attachment_url, attachment_type)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [room, username, text, attachmentUrl, attachmentType]
     );
     return rowToMessage(rows[0]);
   },

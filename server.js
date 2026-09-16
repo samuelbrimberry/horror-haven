@@ -9,14 +9,26 @@ const bcrypt = require('bcryptjs');
 const { Server } = require('socket.io');
 const Stripe = require('stripe');
 const { Filter } = require('bad-words');
+const multer = require('multer');
 
 const db = require('./db');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+// Raised from Socket.IO's 1MB default so base64-encoded image/video
+// attachments (up to ~8MB raw, larger once base64-encoded) can pass through.
+const io = new Server(server, { maxHttpBufferSize: 15 * 1024 * 1024 });
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const profanityFilter = new Filter();
+
+// Attachments are stored inline as base64 in Postgres (no separate file
+// storage service), so limits stay small to protect the free-tier DB quota.
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 8 * 1024 * 1024;
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_VIDEO_BYTES },
+});
 
 const PORT = process.env.PORT || 3000;
 const ROOM_CATEGORIES = new Set(['movie', 'game', 'general']);
@@ -259,6 +271,31 @@ app.post('/api/create-checkout-session', requireAuth, async (req, res) => {
   res.json({ url: session.url });
 });
 
+const ALLOWED_MIME_TYPES = new Set([
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+  'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
+]);
+
+app.post('/api/upload', requireAuth, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
+
+  // Only ever embed a whitelisted mimetype in the data: URL — the client
+  // controls this header, so passing it through unchecked would let a
+  // crafted Content-Type break out of the src="..." attribute (XSS).
+  if (!ALLOWED_MIME_TYPES.has(req.file.mimetype)) {
+    return res.status(400).json({ error: 'Unsupported file type. Use PNG, JPEG, GIF, WebP, MP4, WebM, or MOV.' });
+  }
+
+  const isImage = req.file.mimetype.startsWith('image/');
+  const maxBytes = isImage ? MAX_IMAGE_BYTES : MAX_VIDEO_BYTES;
+  if (req.file.size > maxBytes) {
+    return res.status(400).json({ error: `File too large. Max ${Math.round(maxBytes / (1024 * 1024))}MB for ${isImage ? 'images' : 'videos'}.` });
+  }
+
+  const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  res.json({ url: dataUrl, type: isImage ? 'image' : 'video' });
+});
+
 app.get('/api/rooms', async (req, res) => {
   const rooms = await db.listRooms();
   res.json(rooms);
@@ -370,6 +407,15 @@ app.delete('/api/admin/rooms/:slug', requireAdmin, async (req, res) => {
   res.json({ ok: deleted });
 });
 
+// Catches multer errors (e.g. file too large) so they return a clean JSON
+// response instead of Express's default HTML error page.
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: 'File too large or invalid upload.' });
+  }
+  next(err);
+});
+
 io.on('connection', (socket) => {
   let knownUsername = null;
 
@@ -396,7 +442,7 @@ io.on('connection', (socket) => {
     socket.emit('history', await db.getRecentMessages(targetRoom.slug));
   });
 
-  socket.on('message', async ({ room: roomSlug, text } = {}) => {
+  socket.on('message', async ({ room: roomSlug, text, attachment } = {}) => {
     const user = await getUser();
     if (!user) {
       socket.emit('error-message', 'You must be logged in to chat.');
@@ -406,14 +452,24 @@ io.on('connection', (socket) => {
       socket.emit('error-message', 'Your account has been banned.');
       return;
     }
-    if (!text || !text.trim()) return;
+
+    const hasAttachment = attachment && typeof attachment.url === 'string' && attachment.url.startsWith('data:')
+      && (attachment.type === 'image' || attachment.type === 'video');
+    const trimmed = (text || '').trim().slice(0, 500);
+    if (!trimmed && !hasAttachment) return;
+
     const targetRoom = await db.findRoomBySlug(roomSlug);
     if (!targetRoom) return;
     if (!canAccessRoom(targetRoom, user)) return;
 
-    const trimmed = text.trim().slice(0, 500);
-    const cleaned = profanityFilter.clean(trimmed);
-    const msg = await db.addMessage(targetRoom.slug, user.username, cleaned);
+    const cleaned = trimmed ? profanityFilter.clean(trimmed) : '';
+    const msg = await db.addMessage(
+      targetRoom.slug,
+      user.username,
+      cleaned,
+      hasAttachment ? attachment.url : null,
+      hasAttachment ? attachment.type : null
+    );
     io.to(targetRoom.slug).emit('message', msg);
   });
 
