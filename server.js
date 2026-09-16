@@ -17,8 +17,16 @@ const io = new Server(server);
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const PORT = process.env.PORT || 3000;
-const ROOMS = ['general', 'movies', 'games', 'support', 'vip'];
-const PREMIUM_ROOMS = new Set(['vip']);
+const ROOM_CATEGORIES = new Set(['movie', 'game', 'general']);
+
+function slugify(name) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
 
 // Registered before express.json() because Stripe's signature check needs the
 // raw, unparsed request body.
@@ -129,9 +137,38 @@ app.post('/api/create-checkout-session', requireAuth, async (req, res) => {
 });
 
 app.get('/api/rooms', async (req, res) => {
-  const user = req.session.userId ? await db.findUserById(req.session.userId) : null;
-  const rooms = ROOMS.filter((r) => !PREMIUM_ROOMS.has(r) || (user && user.isPremium));
+  const rooms = await db.listRooms();
   res.json(rooms);
+});
+
+app.post('/api/rooms', requireAuth, async (req, res) => {
+  const { name, category } = req.body || {};
+  if (!name || !name.trim() || name.trim().length > 60) {
+    return res.status(400).json({ error: 'Room name must be 1-60 characters.' });
+  }
+  if (!ROOM_CATEGORIES.has(category)) {
+    return res.status(400).json({ error: 'Category must be "movie", "game", or "general".' });
+  }
+  const slug = slugify(name);
+  if (!slug) {
+    return res.status(400).json({ error: 'Room name must include letters or numbers.' });
+  }
+  const user = await db.findUserById(req.session.userId);
+  const room = await db.createRoom(slug, name.trim(), category, user.username);
+  res.json(room);
+});
+
+app.post('/api/create-portal-session', requireAuth, async (req, res) => {
+  const user = await db.findUserById(req.session.userId);
+  if (!user.stripeCustomerId) {
+    return res.status(400).json({ error: 'No billing account yet — subscribe to Premium first.' });
+  }
+  const origin = `${req.protocol}://${req.get('host')}`;
+  const session = await stripe.billingPortal.sessions.create({
+    customer: user.stripeCustomerId,
+    return_url: `${origin}/settings.html`,
+  });
+  res.json({ url: session.url });
 });
 
 io.on('connection', (socket) => {
@@ -140,27 +177,30 @@ io.on('connection', (socket) => {
     return uid ? db.findUserById(uid) : null;
   };
 
-  socket.on('join', async (room) => {
-    if (!ROOMS.includes(room)) return;
+  socket.on('join', async (roomSlug) => {
+    const targetRoom = await db.findRoomBySlug(roomSlug);
+    if (!targetRoom) return;
     const user = await getUser();
-    if (PREMIUM_ROOMS.has(room) && !(user && user.isPremium)) {
-      socket.emit('error-message', 'The VIP Lounge is for premium members only.');
+    if (targetRoom.isPremium && !(user && user.isPremium)) {
+      socket.emit('error-message', `${targetRoom.name} is for premium members only.`);
       return;
     }
-    socket.join(room);
-    socket.emit('history', await db.getRecentMessages(room));
+    socket.join(targetRoom.slug);
+    socket.emit('history', await db.getRecentMessages(targetRoom.slug));
   });
 
-  socket.on('message', async ({ room, text } = {}) => {
+  socket.on('message', async ({ room: roomSlug, text } = {}) => {
     const user = await getUser();
     if (!user) {
       socket.emit('error-message', 'You must be logged in to chat.');
       return;
     }
-    if (!ROOMS.includes(room) || !text || !text.trim()) return;
-    if (PREMIUM_ROOMS.has(room) && !user.isPremium) return;
-    const msg = await db.addMessage(room, user.username, text.trim().slice(0, 500));
-    io.to(room).emit('message', msg);
+    if (!text || !text.trim()) return;
+    const targetRoom = await db.findRoomBySlug(roomSlug);
+    if (!targetRoom) return;
+    if (targetRoom.isPremium && !user.isPremium) return;
+    const msg = await db.addMessage(targetRoom.slug, user.username, text.trim().slice(0, 500));
+    io.to(targetRoom.slug).emit('message', msg);
   });
 });
 

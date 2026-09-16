@@ -27,6 +27,32 @@ async function init() {
   await pool.query('CREATE INDEX IF NOT EXISTS messages_room_idx ON messages (room, id);');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rooms (
+      id SERIAL PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      is_premium BOOLEAN NOT NULL DEFAULT FALSE,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  const defaultRooms = [
+    { slug: 'general', name: 'General', category: 'general', isPremium: false },
+    { slug: 'support', name: 'Support', category: 'support', isPremium: false },
+    { slug: 'vip', name: 'VIP Lounge', category: 'vip', isPremium: true },
+  ];
+  for (const room of defaultRooms) {
+    await pool.query(
+      `INSERT INTO rooms (slug, name, category, is_premium)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (slug) DO NOTHING`,
+      [room.slug, room.name, room.category, room.isPremium]
+    );
+  }
 }
 
 function rowToUser(row) {
@@ -48,6 +74,19 @@ function rowToMessage(row) {
     room: row.room,
     username: row.username,
     text: row.text,
+    createdAt: row.created_at,
+  };
+}
+
+function rowToRoom(row) {
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    category: row.category,
+    isPremium: row.is_premium,
+    createdBy: row.created_by,
     createdAt: row.created_at,
   };
 }
@@ -108,5 +147,27 @@ module.exports = {
       [room, limit]
     );
     return rows.reverse().map(rowToMessage);
+  },
+
+  async listRooms() {
+    const { rows } = await pool.query('SELECT * FROM rooms ORDER BY category, name');
+    return rows.map(rowToRoom);
+  },
+
+  async findRoomBySlug(slug) {
+    const { rows } = await pool.query('SELECT * FROM rooms WHERE slug = $1', [slug]);
+    return rowToRoom(rows[0]);
+  },
+
+  async createRoom(slug, name, category, createdBy) {
+    const { rows } = await pool.query(
+      `INSERT INTO rooms (slug, name, category, is_premium, created_by)
+       VALUES ($1, $2, $3, FALSE, $4)
+       ON CONFLICT (slug) DO NOTHING
+       RETURNING *`,
+      [slug, name, category, createdBy]
+    );
+    if (rows[0]) return rowToRoom(rows[0]);
+    return this.findRoomBySlug(slug);
   },
 };

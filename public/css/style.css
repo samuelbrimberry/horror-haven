@@ -242,6 +242,33 @@ footer {
 .room-btn.active { background: var(--accent); color: #fff; }
 .room-btn.locked { opacity: 0.55; }
 
+.room-section-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 12px 14px 4px;
+}
+
+.new-room-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 4px 14px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.new-room-form input,
+.new-room-form select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
 .chat-col {
   display: flex;
   flex-direction: column;

@@ -11,13 +11,25 @@
     <a class="brand title-font" href="/">Horror Haven</a>
     <div class="nav-links">
       <a href="/recommendations.html">Recommendations</a>
+      <a href="/settings.html">Settings</a>
       <span id="user-badge"></span>
       <button class="btn btn-ghost" id="logout-btn">Log out</button>
     </div>
   </nav>
 
   <div class="app-shell">
-    <aside class="room-list" id="room-list"></aside>
+    <aside class="room-list">
+      <form id="new-room-form" class="new-room-form">
+        <input id="new-room-name" placeholder="Movie or game title..." maxlength="60" autocomplete="off" />
+        <select id="new-room-category">
+          <option value="movie">Movie</option>
+          <option value="game">Game</option>
+          <option value="general">General</option>
+        </select>
+        <button class="btn btn-ghost btn-block" type="submit">+ New room</button>
+      </form>
+      <div id="room-buttons"></div>
+    </aside>
 
     <div class="chat-col">
       <div class="chat-header">

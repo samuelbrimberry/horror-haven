@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings — Horror Haven</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand title-font" href="/">Horror Haven</a>
+    <div class="nav-links">
+      <a href="/app.html">Chat</a>
+      <a href="/recommendations.html">Recommendations</a>
+    </div>
+  </nav>
+
+  <div class="auth-wrap card" style="max-width: 480px;">
+    <h1 class="title-font">Settings</h1>
+
+    <div class="field">
+      <label>Username</label>
+      <div id="settings-username" style="padding: 10px 0;"></div>
+    </div>
+
+    <div class="field">
+      <label>Membership</label>
+      <div id="settings-tier" style="padding: 10px 0;"></div>
+    </div>
+
+    <button class="btn btn-gold btn-block" id="manage-btn" hidden>Manage subscription</button>
+    <button class="btn btn-block" id="upgrade-btn" hidden>Go Premium — $4.99/mo</button>
+    <div class="error-msg" id="error"></div>
+
+    <p class="hint"><a href="/app.html">&larr; Back to chat</a></p>
+  </div>
+
+  <script>
+    async function init() {
+      const res = await fetch('/api/me');
+      const user = await res.json();
+      if (!user) {
+        window.location.href = '/login.html';
+        return;
+      }
+
+      document.getElementById('settings-username').textContent = user.username;
+      document.getElementById('settings-tier').innerHTML = user.isPremium
+        ? '<span class="badge gold">Premium</span>'
+        : '<span class="badge free">Free</span>';
+
+      if (user.isPremium) {
+        document.getElementById('manage-btn').hidden = false;
+      } else {
+        document.getElementById('upgrade-btn').hidden = false;
+      }
+    }
+
+    document.getElementById('manage-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('error');
+      errorEl.textContent = '';
+      const res = await fetch('/api/create-portal-session', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        errorEl.textContent = data.error || 'Could not open billing portal.';
+      }
+    });
+
+    document.getElementById('upgrade-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('error');
+      errorEl.textContent = '';
+      const res = await fetch('/api/create-checkout-session', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        errorEl.textContent = data.error || 'Could not start checkout.';
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

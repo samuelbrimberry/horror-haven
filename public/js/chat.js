@@ -1,14 +1,26 @@
-const ROOM_LABELS = {
-  general: '💬 General',
-  movies: '🎬 Movies',
-  games: '🎮 Games',
-  support: '🕯️ Support',
-  vip: '👑 VIP Lounge',
+const CATEGORY_ICON = {
+  general: '💬',
+  support: '🕯️',
+  movie: '🎬',
+  game: '🎮',
+  vip: '👑',
 };
+
+const CATEGORY_LABEL = {
+  general: 'General',
+  support: 'Support',
+  movie: 'Movies',
+  game: 'Games',
+  vip: 'VIP',
+};
+
+const CATEGORY_ORDER = ['general', 'support', 'movie', 'game', 'vip'];
 
 let currentUser = null;
 let currentRoom = 'general';
+let currentRoomName = 'General';
 let socket = null;
+let roomsCache = [];
 
 async function init() {
   const res = await fetch('/api/me');
@@ -41,31 +53,41 @@ function renderUserBadge() {
 
 async function loadRooms() {
   const res = await fetch('/api/rooms');
-  const availableRooms = await res.json();
-  const allRooms = Object.keys(ROOM_LABELS);
-  const list = document.getElementById('room-list');
-  list.innerHTML = '';
+  roomsCache = await res.json();
+  const container = document.getElementById('room-buttons');
+  container.innerHTML = '';
 
-  allRooms.forEach((room) => {
-    const unlocked = availableRooms.includes(room);
-    const btn = document.createElement('button');
-    btn.className = 'room-btn' + (room === currentRoom ? ' active' : '') + (unlocked ? '' : ' locked');
-    btn.textContent = ROOM_LABELS[room] + (unlocked ? '' : ' 🔒');
-    btn.addEventListener('click', () => switchRoom(room, unlocked));
-    list.appendChild(btn);
+  CATEGORY_ORDER.forEach((category) => {
+    const roomsInCategory = roomsCache.filter((r) => r.category === category);
+    if (roomsInCategory.length === 0) return;
+
+    const heading = document.createElement('div');
+    heading.className = 'room-section-title';
+    heading.textContent = `${CATEGORY_ICON[category]} ${CATEGORY_LABEL[category]}`;
+    container.appendChild(heading);
+
+    roomsInCategory.forEach((room) => {
+      const unlocked = !room.isPremium || (currentUser && currentUser.isPremium);
+      const btn = document.createElement('button');
+      btn.className = 'room-btn' + (room.slug === currentRoom ? ' active' : '') + (unlocked ? '' : ' locked');
+      btn.textContent = room.name + (unlocked ? '' : ' 🔒');
+      btn.addEventListener('click', () => switchRoom(room, unlocked));
+      container.appendChild(btn);
+    });
   });
 }
 
 function switchRoom(room, unlocked) {
   if (!unlocked) {
-    appendSystemMessage('This room is for Premium members. Click "Go Premium" to unlock it.');
+    appendSystemMessage(`${room.name} is for Premium members. Click "Go Premium" to unlock it.`);
     return;
   }
-  currentRoom = room;
-  document.getElementById('room-title').textContent = ROOM_LABELS[room];
+  currentRoom = room.slug;
+  currentRoomName = room.name;
+  document.getElementById('room-title').textContent = room.name;
   document.getElementById('messages').innerHTML = '';
   loadRooms();
-  socket.emit('join', room);
+  socket.emit('join', room.slug);
 }
 
 function connectSocket() {
@@ -135,6 +157,28 @@ function setupUi() {
   document.getElementById('logout-btn').addEventListener('click', async () => {
     await fetch('/api/logout', { method: 'POST' });
     window.location.href = '/';
+  });
+
+  document.getElementById('new-room-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nameInput = document.getElementById('new-room-name');
+    const categorySelect = document.getElementById('new-room-category');
+    const name = nameInput.value.trim();
+    if (!name) return;
+
+    const res = await fetch('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, category: categorySelect.value }),
+    });
+    const room = await res.json();
+    if (!res.ok) {
+      appendSystemMessage(room.error || 'Could not create room.');
+      return;
+    }
+    nameInput.value = '';
+    await loadRooms();
+    switchRoom(room, true);
   });
 
   document.getElementById('upgrade-btn').addEventListener('click', async () => {
