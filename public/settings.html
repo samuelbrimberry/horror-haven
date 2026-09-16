@@ -85,10 +85,55 @@
       if (res.ok) {
         document.getElementById('settings-username').textContent = data.username;
         input.value = '';
-      } else {
-        errorEl.textContent = data.error || 'Could not update username.';
+        return;
       }
+
+      if (res.status === 402 && data.requiresPayment) {
+        errorEl.innerHTML = '';
+        const msg = document.createElement('div');
+        msg.textContent = data.error;
+        errorEl.appendChild(msg);
+        const payBtn = document.createElement('button');
+        payBtn.className = 'btn btn-gold';
+        payBtn.style.marginTop = '8px';
+        payBtn.textContent = 'Pay $3 to change username';
+        payBtn.addEventListener('click', async () => {
+          const checkoutRes = await fetch('/api/settings/username/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: value }),
+          });
+          const checkoutData = await checkoutRes.json();
+          if (checkoutRes.ok && checkoutData.url) {
+            window.location.href = checkoutData.url;
+          } else {
+            errorEl.textContent = checkoutData.error || 'Could not start checkout.';
+          }
+        });
+        errorEl.appendChild(payBtn);
+        return;
+      }
+
+      errorEl.textContent = data.error || 'Could not update username.';
     });
+
+    async function checkUsernameChangeReturn() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('nameChangePaid') !== '1') return;
+      window.history.replaceState({}, '', '/settings.html');
+
+      const errorEl = document.getElementById('username-error');
+      errorEl.textContent = 'Payment received! Applying your new username...';
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const res = await fetch('/api/me');
+        const user = await res.json();
+        if (user) {
+          document.getElementById('settings-username').textContent = user.username;
+        }
+      }
+      errorEl.textContent = '';
+    }
 
     document.getElementById('manage-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('error');
@@ -114,7 +159,7 @@
       }
     });
 
-    init();
+    init().then(checkUsernameChangeReturn);
   </script>
 </body>
 </html>

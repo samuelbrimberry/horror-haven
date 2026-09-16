@@ -70,6 +70,14 @@ async function init() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS username_changes (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
 
 function rowToUser(row) {
@@ -171,6 +179,18 @@ module.exports = {
   async setUsername(id, newUsername) {
     const { rows } = await pool.query('UPDATE users SET username = $1 WHERE id = $2 RETURNING *', [newUsername, id]);
     return rowToUser(rows[0]);
+  },
+
+  async countRecentUsernameChanges(userId) {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM username_changes WHERE user_id = $1 AND created_at > now() - interval '30 days'`,
+      [userId]
+    );
+    return rows[0].count;
+  },
+
+  async recordUsernameChange(userId) {
+    await pool.query('INSERT INTO username_changes (user_id) VALUES ($1)', [userId]);
   },
 
   async setAdmin(id, value) {

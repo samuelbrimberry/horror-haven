@@ -76,10 +76,21 @@ app.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (re
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-    const userId = Number(session.client_reference_id);
-    if (userId) {
-      await db.setStripeInfo(userId, session.customer, session.subscription);
-      await db.setPremium(userId, true);
+
+    if (session.metadata && session.metadata.kind === 'username_change') {
+      const userId = Number(session.metadata.userId);
+      const newUsername = session.metadata.newUsername;
+      const existing = await db.findUserByUsername(newUsername);
+      if (userId && (!existing || existing.id === userId)) {
+        await db.setUsername(userId, newUsername);
+        await db.recordUsernameChange(userId);
+      }
+    } else {
+      const userId = Number(session.client_reference_id);
+      if (userId) {
+        await db.setStripeInfo(userId, session.customer, session.subscription);
+        await db.setPremium(userId, true);
+      }
     }
   }
 
@@ -169,18 +180,64 @@ app.get('/api/me', async (req, res) => {
   res.json(user ? publicUser(user) : null);
 });
 
+const FREE_USERNAME_CHANGES_PER_30_DAYS = 2;
+
+function validateUsername(username) {
+  if (!username || username.trim().length < 3 || username.trim().length > 20) {
+    return 'Username must be 3-20 characters.';
+  }
+  return null;
+}
+
 app.post('/api/settings/username', requireAuth, async (req, res) => {
   const { username } = req.body || {};
-  if (!username || username.trim().length < 3 || username.trim().length > 20) {
-    return res.status(400).json({ error: 'Username must be 3-20 characters.' });
-  }
+  const validationError = validateUsername(username);
+  if (validationError) return res.status(400).json({ error: validationError });
+
   const trimmed = username.trim();
   const existing = await db.findUserByUsername(trimmed);
   if (existing && existing.id !== req.session.userId) {
     return res.status(400).json({ error: 'That username is already taken.' });
   }
+
+  const recentChanges = await db.countRecentUsernameChanges(req.session.userId);
+  if (recentChanges >= FREE_USERNAME_CHANGES_PER_30_DAYS) {
+    return res.status(402).json({
+      error: `You've used your ${FREE_USERNAME_CHANGES_PER_30_DAYS} free name changes in the last 30 days. A $3 fee applies to change it again.`,
+      requiresPayment: true,
+    });
+  }
+
   const user = await db.setUsername(req.session.userId, trimmed);
+  await db.recordUsernameChange(req.session.userId);
   res.json(publicUser(user));
+});
+
+app.post('/api/settings/username/checkout', requireAuth, async (req, res) => {
+  const { username } = req.body || {};
+  const validationError = validateUsername(username);
+  if (validationError) return res.status(400).json({ error: validationError });
+
+  const trimmed = username.trim();
+  const existing = await db.findUserByUsername(trimmed);
+  if (existing && existing.id !== req.session.userId) {
+    return res.status(400).json({ error: 'That username is already taken.' });
+  }
+
+  const origin = `${req.protocol}://${req.get('host')}`;
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    line_items: [{ price: process.env.STRIPE_USERNAME_CHANGE_PRICE_ID, quantity: 1 }],
+    metadata: {
+      kind: 'username_change',
+      userId: String(req.session.userId),
+      newUsername: trimmed,
+    },
+    success_url: `${origin}/settings.html?nameChangePaid=1`,
+    cancel_url: `${origin}/settings.html?nameChangePaid=0`,
+  });
+
+  res.json({ url: session.url });
 });
 
 app.post('/api/create-checkout-session', requireAuth, async (req, res) => {
