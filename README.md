@@ -69,8 +69,8 @@ Premium members. To run real ads:
    setups; if you deploy behind a strict Content-Security-Policy, allowlist
    `pagead2.googlesyndication.com` and related AdSense domains.
 
-### 3. Affiliate links (recommendations page)
-`public/recommendations.html` lists horror movies and games, each linking to an
+### 3. Affiliate links (Movies/Games pages)
+`public/movies.html` and `public/games.html` each list horror titles linking to an
 Amazon search result tagged with the Associates tracking ID `horrorhaven05-20`
 (e.g. `https://www.amazon.com/s?k=<title>&tag=horrorhaven05-20`). Any purchase
 made after a visitor clicks through earns a commission.
