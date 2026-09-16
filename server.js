@@ -169,6 +169,20 @@ app.get('/api/me', async (req, res) => {
   res.json(user ? publicUser(user) : null);
 });
 
+app.post('/api/settings/username', requireAuth, async (req, res) => {
+  const { username } = req.body || {};
+  if (!username || username.trim().length < 3 || username.trim().length > 20) {
+    return res.status(400).json({ error: 'Username must be 3-20 characters.' });
+  }
+  const trimmed = username.trim();
+  const existing = await db.findUserByUsername(trimmed);
+  if (existing && existing.id !== req.session.userId) {
+    return res.status(400).json({ error: 'That username is already taken.' });
+  }
+  const user = await db.setUsername(req.session.userId, trimmed);
+  res.json(publicUser(user));
+});
+
 app.post('/api/create-checkout-session', requireAuth, async (req, res) => {
   const user = await db.findUserById(req.session.userId);
   if (user.isPremium) {

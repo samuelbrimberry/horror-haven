@@ -28,6 +28,13 @@
       <div id="settings-username" style="padding: 10px 0;"></div>
     </div>
 
+    <form id="username-form" class="field">
+      <label for="new-username">Change username</label>
+      <input id="new-username" maxlength="20" autocomplete="off" placeholder="New username" />
+      <button class="btn btn-ghost btn-block" type="submit" style="margin-top: 8px;">Save username</button>
+    </form>
+    <div class="error-msg" id="username-error"></div>
+
     <div class="field">
       <label>Membership</label>
       <div id="settings-tier" style="padding: 10px 0;"></div>
@@ -61,6 +68,27 @@
         document.getElementById('upgrade-btn').hidden = false;
       }
     }
+
+    document.getElementById('username-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('username-error');
+      errorEl.textContent = '';
+      const input = document.getElementById('new-username');
+      const value = input.value.trim();
+      if (!value) return;
+      const res = await fetch('/api/settings/username', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: value }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        document.getElementById('settings-username').textContent = data.username;
+        input.value = '';
+      } else {
+        errorEl.textContent = data.error || 'Could not update username.';
+      }
+    });
 
     document.getElementById('manage-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('error');

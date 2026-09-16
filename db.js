@@ -168,6 +168,11 @@ module.exports = {
     return rowToUser(rows[0]);
   },
 
+  async setUsername(id, newUsername) {
+    const { rows } = await pool.query('UPDATE users SET username = $1 WHERE id = $2 RETURNING *', [newUsername, id]);
+    return rowToUser(rows[0]);
+  },
+
   async setAdmin(id, value) {
     const { rows } = await pool.query('UPDATE users SET is_admin = $1 WHERE id = $2 RETURNING *', [value, id]);
     return rowToUser(rows[0]);
