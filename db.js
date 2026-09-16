@@ -25,6 +25,8 @@ async function init() {
     );
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS messages_room_idx ON messages (room, id);');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;');
 }
 
 function rowToUser(row) {
@@ -35,6 +37,8 @@ function rowToUser(row) {
     passwordHash: row.password_hash,
     isPremium: row.is_premium,
     createdAt: row.created_at,
+    stripeCustomerId: row.stripe_customer_id,
+    stripeSubscriptionId: row.stripe_subscription_id,
   };
 }
 
@@ -74,6 +78,19 @@ module.exports = {
       'UPDATE users SET is_premium = $1 WHERE id = $2 RETURNING *',
       [value, id]
     );
+    return rowToUser(rows[0]);
+  },
+
+  async setStripeInfo(id, stripeCustomerId, stripeSubscriptionId) {
+    const { rows } = await pool.query(
+      'UPDATE users SET stripe_customer_id = $1, stripe_subscription_id = $2 WHERE id = $3 RETURNING *',
+      [stripeCustomerId, stripeSubscriptionId, id]
+    );
+    return rowToUser(rows[0]);
+  },
+
+  async findUserByStripeCustomerId(stripeCustomerId) {
+    const { rows } = await pool.query('SELECT * FROM users WHERE stripe_customer_id = $1', [stripeCustomerId]);
     return rowToUser(rows[0]);
   },
 

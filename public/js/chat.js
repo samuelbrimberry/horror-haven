@@ -138,15 +138,37 @@ function setupUi() {
   });
 
   document.getElementById('upgrade-btn').addEventListener('click', async () => {
-    const res = await fetch('/api/upgrade', { method: 'POST' });
-    if (res.ok) {
-      currentUser = await res.json();
-      document.getElementById('upgrade-btn').hidden = true;
-      renderUserBadge();
-      loadRooms();
-      appendSystemMessage('You are now a Premium member! The VIP Lounge is unlocked.');
+    const res = await fetch('/api/create-checkout-session', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.url) {
+      window.location.href = data.url;
+    } else {
+      appendSystemMessage(data.error || 'Could not start checkout. Try again.');
     }
   });
 }
 
-init();
+async function checkUpgradeReturn() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('upgraded') !== '1') return;
+  window.history.replaceState({}, '', '/app.html');
+
+  appendSystemMessage('Payment received! Activating your Premium membership...');
+  // Stripe's webhook can take a few seconds to reach us, so poll briefly
+  // rather than assuming the upgrade landed the instant Checkout redirects back.
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const res = await fetch('/api/me');
+    const user = await res.json();
+    if (user && user.isPremium) {
+      currentUser = user;
+      renderUserBadge();
+      loadRooms();
+      appendSystemMessage('You are now a Premium member! The VIP Lounge is unlocked.');
+      return;
+    }
+  }
+  appendSystemMessage("Payment received, but activation is taking longer than expected — refresh in a moment.");
+}
+
+init().then(checkUpgradeReturn);

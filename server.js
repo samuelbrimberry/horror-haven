@@ -7,16 +7,50 @@ const session = require('express-session');
 const FileStore = require('session-file-store')(session);
 const bcrypt = require('bcryptjs');
 const { Server } = require('socket.io');
+const Stripe = require('stripe');
 
 const db = require('./db');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const PORT = process.env.PORT || 3000;
 const ROOMS = ['general', 'movies', 'games', 'support', 'vip'];
 const PREMIUM_ROOMS = new Set(['vip']);
+
+// Registered before express.json() because Stripe's signature check needs the
+// raw, unparsed request body.
+app.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('Stripe webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const userId = Number(session.client_reference_id);
+    if (userId) {
+      await db.setStripeInfo(userId, session.customer, session.subscription);
+      await db.setPremium(userId, true);
+    }
+  }
+
+  if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+    const subscription = event.data.object;
+    const isActive = subscription.status === 'active' || subscription.status === 'trialing';
+    const user = await db.findUserByStripeCustomerId(subscription.customer);
+    if (user) {
+      await db.setPremium(user.id, isActive);
+    }
+  }
+
+  res.json({ received: true });
+});
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -75,12 +109,23 @@ app.get('/api/me', async (req, res) => {
   res.json(user ? publicUser(user) : null);
 });
 
-// DEMO ONLY: instantly flips the account to premium so you can see the gated
-// features work. Swap this for a real Stripe Checkout session + webhook
-// before taking real payments — see README.md "Turning on real payments".
-app.post('/api/upgrade', requireAuth, async (req, res) => {
-  const user = await db.setPremium(req.session.userId, true);
-  res.json(publicUser(user));
+app.post('/api/create-checkout-session', requireAuth, async (req, res) => {
+  const user = await db.findUserById(req.session.userId);
+  if (user.isPremium) {
+    return res.status(400).json({ error: 'Already Premium.' });
+  }
+
+  const origin = `${req.protocol}://${req.get('host')}`;
+  const session = await stripe.checkout.sessions.create({
+    mode: 'subscription',
+    line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+    customer: user.stripeCustomerId || undefined,
+    client_reference_id: String(user.id),
+    success_url: `${origin}/app.html?upgraded=1`,
+    cancel_url: `${origin}/app.html?upgraded=0`,
+  });
+
+  res.json({ url: session.url });
 });
 
 app.get('/api/rooms', async (req, res) => {

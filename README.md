@@ -26,21 +26,37 @@ Three monetization paths are wired into the app as working demos. Each one has a
 clearly marked spot to swap in your real account/API keys.
 
 ### 1. Premium membership (recurring revenue)
-Right now, clicking "Go Premium" in the app instantly flips your account to premium
-(`POST /api/upgrade` in `server.js`) so you can see the gated VIP room and ad-free
-experience work. **This does not charge real money yet.**
+Clicking "Go Premium" in the app calls `POST /api/create-checkout-session`
+(`server.js`), which creates a real Stripe Checkout Session for the $4.99/mo
+price and redirects the user there. Stripe collects the card, handles the
+recurring billing, and — on success — calls back to `POST /webhook/stripe`,
+which verifies the event signature and flips `is_premium` in Postgres
+(`checkout.session.completed` to turn it on, `customer.subscription.deleted`/
+`updated` to turn it off if they cancel or a payment fails).
 
-To take real payments:
-1. Create a [Stripe](https://stripe.com) account and get your API keys.
-2. `npm install stripe`
-3. Replace the `/api/upgrade` handler in `server.js` with one that creates a
-   Stripe Checkout Session (`stripe.checkout.sessions.create`) for a $4.99/mo
-   subscription price, and redirect the user there instead of upgrading directly.
-4. Add a webhook endpoint (`/api/stripe-webhook`) that listens for
-   `checkout.session.completed` / `customer.subscription.deleted` events and calls
-   `db.setPremium(userId, true/false)` accordingly.
+Required environment variables (set locally in `.env` and on your host):
+- `STRIPE_SECRET_KEY` — Developers → API keys in the Stripe dashboard.
+- `STRIPE_PRICE_ID` — the Price ID of your "Horror Haven Premium" product.
+- `STRIPE_WEBHOOK_SECRET` — created in the next step, once you have a live URL.
 
-Stripe's docs for "Subscriptions with Checkout" walk through this exact flow.
+To wire up the webhook once deployed:
+1. In the Stripe dashboard, go to Developers → Webhooks → Add endpoint.
+2. Endpoint URL: `https://<your-domain>/webhook/stripe`.
+3. Select the events `checkout.session.completed`, `customer.subscription.updated`,
+   and `customer.subscription.deleted`.
+4. Copy the endpoint's **Signing secret** (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`
+   on your host.
+5. Use Stripe's "Send test webhook" button on that endpoint to confirm it
+   returns `200 OK` without completing a real purchase.
+
+You're currently using **live** Stripe keys, so any completed checkout charges
+a real card. Test the actual purchase flow yourself with a real card (or a
+small one-off charge you refund afterward) rather than asking an AI agent to
+do it — that's a hard rule, not a preference.
+
+A nice follow-up once this is working: add a "Manage subscription" link using
+Stripe's Customer Portal (`stripe.billingPortal.sessions.create`) so members
+can cancel or update their card without emailing you.
 
 ### 2. Ads (for free-tier users)
 `public/app.html` has an `<div id="ad-slot">` that's hidden automatically for
