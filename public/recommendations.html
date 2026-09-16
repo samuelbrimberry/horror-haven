@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recommendations — Horror Haven</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand title-font" href="/">Horror Haven</a>
+    <div class="nav-links">
+      <a href="/app.html">Chat</a>
+      <a href="/login.html">Log in</a>
+    </div>
+  </nav>
+
+  <section class="section">
+    <h2 class="title-font">Community Recommendations</h2>
+    <p class="sub">
+      Curated picks from the Horror Haven community. Some links below are affiliate links — if you
+      buy or rent through them, it costs you nothing extra and a small cut helps keep this site running.
+    </p>
+
+    <div class="container">
+      <h3>🎬 Movies</h3>
+      <div class="rec-grid">
+        <div class="card rec-card">
+          <h3>Hereditary (2018)</h3>
+          <p>Slow-burn family horror that earns every scream. Community favorite for a reason.</p>
+          <!-- Replace href with your real streaming/rental affiliate link (e.g. JustWatch, Amazon). -->
+          <a class="btn btn-ghost" href="#" data-affiliate="hereditary">Watch it</a>
+          <div class="rec-tag">Affiliate link</div>
+        </div>
+        <div class="card rec-card">
+          <h3>The Thing (1982)</h3>
+          <p>Practical-effects horror that still holds up. Paranoia and isolation done right.</p>
+          <a class="btn btn-ghost" href="#" data-affiliate="the-thing">Watch it</a>
+          <div class="rec-tag">Affiliate link</div>
+        </div>
+        <div class="card rec-card">
+          <h3>Talk to Me (2022)</h3>
+          <p>Modern possession horror with a lot of heart underneath the dread.</p>
+          <a class="btn btn-ghost" href="#" data-affiliate="talk-to-me">Watch it</a>
+          <div class="rec-tag">Affiliate link</div>
+        </div>
+      </div>
+
+      <h3 style="margin-top:40px;">🎮 Games</h3>
+      <div class="rec-grid">
+        <div class="card rec-card">
+          <h3>Resident Evil 2 (Remake)</h3>
+          <p>The gold standard for modern survival horror remakes.</p>
+          <!-- Replace href with your Amazon Associates / Steam affiliate link. -->
+          <a class="btn btn-ghost" href="#" data-affiliate="re2-remake">Get it</a>
+          <div class="rec-tag">Affiliate link</div>
+        </div>
+        <div class="card rec-card">
+          <h3>Phasmophobia</h3>
+          <p>Best played with friends who scream easily. Co-op ghost hunting chaos.</p>
+          <a class="btn btn-ghost" href="#" data-affiliate="phasmophobia">Get it</a>
+          <div class="rec-tag">Affiliate link</div>
+        </div>
+        <div class="card rec-card">
+          <h3>Signalis</h3>
+          <p>Retro-styled sci-fi horror with atmosphere for days.</p>
+          <a class="btn btn-ghost" href="#" data-affiliate="signalis">Get it</a>
+          <div class="rec-tag">Affiliate link</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Horror Haven — a community, not a corporation. Built by fans, for fans.</p>
+    <p>&copy; 2026 Sam Developments. All rights reserved.</p>
+  </footer>
+
+  <script>
+    // Placeholder click handler. In production, point data-affiliate items at
+    // your real Amazon Associates / streaming-partner URLs (see README.md).
+    document.querySelectorAll('[data-affiliate]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        alert('Hook this button up to your real affiliate link for "' + el.dataset.affiliate + '" — see README.md.');
+      });
+    });
+  </script>
+</body>
+</html>

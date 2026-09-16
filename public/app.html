@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat — Horror Haven</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand title-font" href="/">Horror Haven</a>
+    <div class="nav-links">
+      <a href="/recommendations.html">Recommendations</a>
+      <span id="user-badge"></span>
+      <button class="btn btn-ghost" id="logout-btn">Log out</button>
+    </div>
+  </nav>
+
+  <div class="app-shell">
+    <aside class="room-list" id="room-list"></aside>
+
+    <div class="chat-col">
+      <div class="chat-header">
+        <div>
+          <strong id="room-title">General</strong>
+        </div>
+        <button class="btn btn-gold" id="upgrade-btn" hidden>Go Premium — unlock VIP</button>
+      </div>
+
+      <div class="ad-slot" id="ad-slot">
+        Ad space — Premium members never see this.
+        <!-- Swap this block for your real AdSense (or other network) unit once approved. -->
+      </div>
+
+      <div class="chat-messages" id="messages"></div>
+
+      <form class="chat-input" id="chat-form">
+        <input id="chat-text" placeholder="Say something..." autocomplete="off" maxlength="500" />
+        <button class="btn" type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/chat.js"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Join Horror Haven</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand title-font" href="/">Horror Haven</a>
+    <div class="nav-links">
+      <a href="/login.html">Log in</a>
+    </div>
+  </nav>
+
+  <div class="auth-wrap card">
+    <h1 class="title-font">Join the Haven</h1>
+    <form id="register-form">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required minlength="3" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" required minlength="6" />
+      </div>
+      <button class="btn btn-block" type="submit">Create account</button>
+      <div class="error-msg" id="error"></div>
+    </form>
+    <p class="hint">Already have an account? <a href="/login.html">Log in</a></p>
+  </div>
+
+  <footer>
+    <p>&copy; 2026 Sam Developments. All rights reserved.</p>
+  </footer>
+
+  <script src="/js/auth.js"></script>
+  <script>
+    document.getElementById('register-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitAuth('/api/register', {
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value,
+      });
+    });
+  </script>
+</body>
+</html>

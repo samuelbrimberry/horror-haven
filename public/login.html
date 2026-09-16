@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log in — Horror Haven</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand title-font" href="/">Horror Haven</a>
+    <div class="nav-links">
+      <a href="/register.html">Join Free</a>
+    </div>
+  </nav>
+
+  <div class="auth-wrap card">
+    <h1 class="title-font">Welcome back</h1>
+    <form id="login-form">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn btn-block" type="submit">Log in</button>
+      <div class="error-msg" id="error"></div>
+    </form>
+    <p class="hint">New here? <a href="/register.html">Create an account</a></p>
+  </div>
+
+  <footer>
+    <p>&copy; 2026 Sam Developments. All rights reserved.</p>
+  </footer>
+
+  <script src="/js/auth.js"></script>
+  <script>
+    document.getElementById('login-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitAuth('/api/login', {
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value,
+      });
+    });
+  </script>
+</body>
+</html>
