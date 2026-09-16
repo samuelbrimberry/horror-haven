@@ -45,11 +45,8 @@ function renderUserBadge() {
   else if (currentUser.isPremium) tier = '<span class="badge gold">Premium</span>';
   badge.innerHTML = `${currentUser.username} ${tier}`;
 
-  const adSlot = document.getElementById('ad-slot');
-  if (hasFullAccess) adSlot.hidden = true;
-
-  const upgradeBtn = document.getElementById('upgrade-btn');
-  if (!hasFullAccess) upgradeBtn.hidden = false;
+  document.getElementById('ad-slot').hidden = hasFullAccess;
+  document.getElementById('upgrade-btn').hidden = hasFullAccess;
 
   if (currentUser.isAdmin) document.getElementById('admin-link').hidden = false;
 }
