@@ -301,6 +301,17 @@ footer {
 .msg .time { font-size: 0.72rem; color: var(--text-dim); margin-left: 6px; }
 .msg.system .body { color: var(--text-dim); font-style: italic; background: transparent; }
 
+.report-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 2px 0 0;
+}
+
+.report-btn:hover { color: var(--accent-bright); }
+
 .chat-input {
   display: flex;
   gap: 10px;

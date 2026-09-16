@@ -28,6 +28,7 @@ async function init() {
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE;');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS rooms (
@@ -54,6 +55,21 @@ async function init() {
       [room.slug, room.name, room.category, room.isPremium]
     );
   }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reports (
+      id SERIAL PRIMARY KEY,
+      message_id INTEGER,
+      room TEXT NOT NULL,
+      reported_user_id INTEGER,
+      reported_username TEXT NOT NULL,
+      reporter_username TEXT NOT NULL,
+      message_text TEXT NOT NULL,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
 
 function rowToUser(row) {
@@ -67,6 +83,23 @@ function rowToUser(row) {
     stripeCustomerId: row.stripe_customer_id,
     stripeSubscriptionId: row.stripe_subscription_id,
     isAdmin: row.is_admin,
+    isBanned: row.is_banned,
+  };
+}
+
+function rowToReport(row) {
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    messageId: row.message_id,
+    room: row.room,
+    reportedUserId: row.reported_user_id,
+    reportedUsername: row.reported_username,
+    reporterUsername: row.reporter_username,
+    messageText: row.message_text,
+    reason: row.reason,
+    status: row.status,
+    createdAt: row.created_at,
   };
 }
 
@@ -140,6 +173,11 @@ module.exports = {
     return rowToUser(rows[0]);
   },
 
+  async setBanned(id, value) {
+    const { rows } = await pool.query('UPDATE users SET is_banned = $1 WHERE id = $2 RETURNING *', [value, id]);
+    return rowToUser(rows[0]);
+  },
+
   async listUsers() {
     const { rows } = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
     return rows.map(rowToUser);
@@ -192,5 +230,28 @@ module.exports = {
     );
     if (rows[0]) return rowToRoom(rows[0]);
     return this.findRoomBySlug(slug);
+  },
+
+  async createReport({ messageId, room, reportedUserId, reportedUsername, reporterUsername, messageText, reason }) {
+    const { rows } = await pool.query(
+      `INSERT INTO reports (message_id, room, reported_user_id, reported_username, reporter_username, message_text, reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [messageId, room, reportedUserId, reportedUsername, reporterUsername, messageText, reason || null]
+    );
+    return rowToReport(rows[0]);
+  },
+
+  async listReports(status = 'open') {
+    const { rows } = await pool.query('SELECT * FROM reports WHERE status = $1 ORDER BY created_at DESC', [status]);
+    return rows.map(rowToReport);
+  },
+
+  async resolveReport(id) {
+    const { rows } = await pool.query(
+      `UPDATE reports SET status = 'resolved' WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    return rowToReport(rows[0]);
   },
 };

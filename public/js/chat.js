@@ -69,7 +69,7 @@ async function loadRooms() {
     container.appendChild(heading);
 
     roomsInCategory.forEach((room) => {
-      const unlocked = !room.isPremium || (currentUser && currentUser.isPremium);
+      const unlocked = !room.isPremium || (currentUser && (currentUser.isPremium || currentUser.isAdmin));
       const btn = document.createElement('button');
       btn.className = 'room-btn' + (room.slug === currentRoom ? ' active' : '') + (unlocked ? '' : ' locked');
       btn.textContent = room.name + (unlocked ? '' : ' 🔒');
@@ -113,6 +113,12 @@ function connectSocket() {
   socket.on('error-message', (text) => {
     appendSystemMessage(text);
   });
+
+  socket.on('banned', async () => {
+    alert('Your account has been banned.');
+    await fetch('/api/logout', { method: 'POST' });
+    window.location.href = '/';
+  });
 }
 
 function renderMessage(msg) {
@@ -124,7 +130,34 @@ function renderMessage(msg) {
     <div class="who ${isMe ? 'me' : ''}">${escapeHtml(msg.username)}<span class="time">${time}</span></div>
     <div class="body">${escapeHtml(msg.text)}</div>
   `;
+
+  if (!isMe) {
+    const reportBtn = document.createElement('button');
+    reportBtn.className = 'report-btn';
+    reportBtn.textContent = '🚩 Report';
+    reportBtn.addEventListener('click', () => reportMessage(msg));
+    el.appendChild(reportBtn);
+  }
+
   document.getElementById('messages').appendChild(el);
+}
+
+async function reportMessage(msg) {
+  const reason = prompt(`Report ${msg.username}'s message? Add an optional reason:`);
+  if (reason === null) return;
+  const res = await fetch('/api/reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messageId: msg.id,
+      room: currentRoom,
+      reportedUsername: msg.username,
+      messageText: msg.text,
+      reason,
+    }),
+  });
+  const data = await res.json();
+  appendSystemMessage(res.ok ? 'Report sent to the moderators.' : (data.error || 'Could not send report.'));
 }
 
 function appendSystemMessage(text) {

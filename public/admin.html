@@ -32,10 +32,15 @@
 
     <div id="admin-content" hidden>
       <section class="card" style="margin-bottom: 24px;">
+        <h2>Reports <span id="reports-count" class="badge free"></span></h2>
+        <div id="reports-body" style="margin-top: 12px;"></div>
+      </section>
+
+      <section class="card" style="margin-bottom: 24px;">
         <h2>Users</h2>
         <table class="admin-table">
           <thead>
-            <tr><th>Username</th><th>Premium</th><th>Admin</th></tr>
+            <tr><th>Username</th><th>Premium</th><th>Admin</th><th>Status</th><th></th></tr>
           </thead>
           <tbody id="users-body"></tbody>
         </table>
@@ -67,8 +72,72 @@
         return;
       }
       document.getElementById('admin-content').hidden = false;
+      await loadReports();
       await loadUsers();
       await loadRoomSelect();
+    }
+
+    async function loadReports() {
+      const reports = await (await fetch('/api/admin/reports')).json();
+      const body = document.getElementById('reports-body');
+      const countEl = document.getElementById('reports-count');
+      countEl.textContent = reports.length;
+      body.innerHTML = '';
+
+      if (reports.length === 0) {
+        body.innerHTML = '<p style="color: var(--text-dim);">No open reports.</p>';
+        return;
+      }
+
+      reports.forEach((r) => {
+        const row = document.createElement('div');
+        row.className = 'admin-msg';
+        const time = new Date(r.createdAt).toLocaleString();
+        row.innerHTML = `
+          <div class="body">
+            <div><span class="who">${escapeHtml(r.reportedUsername)}</span> reported by ${escapeHtml(r.reporterUsername)} in "${escapeHtml(r.room)}" &middot; ${time}</div>
+            <div style="margin-top: 4px;">"${escapeHtml(r.messageText)}"</div>
+            ${r.reason ? `<div style="margin-top: 4px; color: var(--text-dim);">Reason: ${escapeHtml(r.reason)}</div>` : ''}
+          </div>
+        `;
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '8px';
+        actions.style.flexShrink = '0';
+
+        if (r.messageId) {
+          const delBtn = document.createElement('button');
+          delBtn.className = 'btn btn-ghost';
+          delBtn.textContent = 'Delete msg';
+          delBtn.addEventListener('click', async () => {
+            await fetch(`/api/admin/messages/${r.messageId}`, { method: 'DELETE' });
+          });
+          actions.appendChild(delBtn);
+        }
+
+        if (r.reportedUserId) {
+          const banBtn = document.createElement('button');
+          banBtn.className = 'btn btn-ghost';
+          banBtn.textContent = 'Ban user';
+          banBtn.addEventListener('click', async () => {
+            await fetch(`/api/admin/users/${r.reportedUserId}/ban`, { method: 'POST' });
+            loadUsers();
+          });
+          actions.appendChild(banBtn);
+        }
+
+        const resolveBtn = document.createElement('button');
+        resolveBtn.className = 'btn';
+        resolveBtn.textContent = 'Resolve';
+        resolveBtn.addEventListener('click', async () => {
+          await fetch(`/api/admin/reports/${r.id}/resolve`, { method: 'POST' });
+          loadReports();
+        });
+        actions.appendChild(resolveBtn);
+
+        row.appendChild(actions);
+        body.appendChild(row);
+      });
     }
 
     async function loadUsers() {
@@ -81,7 +150,18 @@
           <td>${escapeHtml(u.username)}</td>
           <td>${u.isPremium ? '✔' : '—'}</td>
           <td>${u.isAdmin ? '✔' : '—'}</td>
+          <td>${u.isBanned ? '<span class="badge free">Banned</span>' : '<span class="badge gold">Active</span>'}</td>
+          <td></td>
         `;
+        const actionCell = tr.lastElementChild;
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-ghost';
+        btn.textContent = u.isBanned ? 'Unban' : 'Ban';
+        btn.addEventListener('click', async () => {
+          await fetch(`/api/admin/users/${u.id}/${u.isBanned ? 'unban' : 'ban'}`, { method: 'POST' });
+          loadUsers();
+        });
+        actionCell.appendChild(btn);
         body.appendChild(tr);
       });
     }

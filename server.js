@@ -22,6 +22,38 @@ const PORT = process.env.PORT || 3000;
 const ROOM_CATEGORIES = new Set(['movie', 'game', 'general']);
 const PROTECTED_ROOM_SLUGS = new Set(['general', 'support', 'vip']);
 
+// Tracks which sockets belong to which username, so a ban can disconnect
+// someone's live connection immediately instead of waiting for their next action.
+const activeSockets = new Map();
+
+function registerSocket(username, socketId) {
+  if (!activeSockets.has(username)) activeSockets.set(username, new Set());
+  activeSockets.get(username).add(socketId);
+}
+
+function unregisterSocket(username, socketId) {
+  const set = activeSockets.get(username);
+  if (!set) return;
+  set.delete(socketId);
+  if (set.size === 0) activeSockets.delete(username);
+}
+
+function kickUser(username) {
+  const set = activeSockets.get(username);
+  if (!set) return;
+  set.forEach((socketId) => {
+    const s = io.sockets.sockets.get(socketId);
+    if (s) {
+      s.emit('banned');
+      s.disconnect(true);
+    }
+  });
+}
+
+function canAccessRoom(room, user) {
+  return !room.isPremium || (user && (user.isPremium || user.isAdmin));
+}
+
 function slugify(name) {
   return name
     .toLowerCase()
@@ -117,6 +149,9 @@ app.post('/api/login', async (req, res) => {
   if (!user || !bcrypt.compareSync(password || '', user.passwordHash)) {
     return res.status(401).json({ error: 'Invalid username or password.' });
   }
+  if (user.isBanned) {
+    return res.status(403).json({ error: 'This account has been banned.' });
+  }
   const adminUsername = (process.env.ADMIN_USERNAME || '').toLowerCase();
   if (adminUsername && user.username.toLowerCase() === adminUsername && !user.isAdmin) {
     user = await db.setAdmin(user.id, true);
@@ -195,8 +230,55 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
     username: u.username,
     isPremium: u.isPremium,
     isAdmin: u.isAdmin,
+    isBanned: u.isBanned,
     createdAt: u.createdAt,
   })));
+});
+
+app.post('/api/admin/users/:id/ban', requireAdmin, async (req, res) => {
+  const user = await db.setBanned(Number(req.params.id), true);
+  if (!user) return res.status(404).json({ error: 'User not found.' });
+  kickUser(user.username);
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/users/:id/unban', requireAdmin, async (req, res) => {
+  const user = await db.setBanned(Number(req.params.id), false);
+  if (!user) return res.status(404).json({ error: 'User not found.' });
+  res.json({ ok: true });
+});
+
+app.post('/api/reports', requireAuth, async (req, res) => {
+  const { messageId, room, reportedUsername, messageText, reason } = req.body || {};
+  if (!room || !reportedUsername || !messageText) {
+    return res.status(400).json({ error: 'Missing report details.' });
+  }
+  const reporter = await db.findUserById(req.session.userId);
+  if (reporter.username === reportedUsername) {
+    return res.status(400).json({ error: "You can't report your own message." });
+  }
+  const reportedUser = await db.findUserByUsername(reportedUsername);
+  const report = await db.createReport({
+    messageId: messageId || null,
+    room,
+    reportedUserId: reportedUser ? reportedUser.id : null,
+    reportedUsername,
+    reporterUsername: reporter.username,
+    messageText: String(messageText).slice(0, 500),
+    reason: reason ? String(reason).slice(0, 300) : null,
+  });
+  res.json(report);
+});
+
+app.get('/api/admin/reports', requireAdmin, async (req, res) => {
+  const reports = await db.listReports('open');
+  res.json(reports);
+});
+
+app.post('/api/admin/reports/:id/resolve', requireAdmin, async (req, res) => {
+  const report = await db.resolveReport(Number(req.params.id));
+  if (!report) return res.status(404).json({ error: 'Report not found.' });
+  res.json(report);
 });
 
 app.get('/api/admin/messages/:roomSlug', requireAdmin, async (req, res) => {
@@ -218,16 +300,24 @@ app.delete('/api/admin/rooms/:slug', requireAdmin, async (req, res) => {
 });
 
 io.on('connection', (socket) => {
-  const getUser = () => {
+  let knownUsername = null;
+
+  const getUser = async () => {
     const uid = socket.request.session && socket.request.session.userId;
-    return uid ? db.findUserById(uid) : null;
+    const user = uid ? await db.findUserById(uid) : null;
+    if (user && knownUsername !== user.username) {
+      if (knownUsername) unregisterSocket(knownUsername, socket.id);
+      knownUsername = user.username;
+      registerSocket(knownUsername, socket.id);
+    }
+    return user;
   };
 
   socket.on('join', async (roomSlug) => {
     const targetRoom = await db.findRoomBySlug(roomSlug);
     if (!targetRoom) return;
     const user = await getUser();
-    if (targetRoom.isPremium && !(user && user.isPremium)) {
+    if (!canAccessRoom(targetRoom, user)) {
       socket.emit('error-message', `${targetRoom.name} is for premium members only.`);
       return;
     }
@@ -241,15 +331,23 @@ io.on('connection', (socket) => {
       socket.emit('error-message', 'You must be logged in to chat.');
       return;
     }
+    if (user.isBanned) {
+      socket.emit('error-message', 'Your account has been banned.');
+      return;
+    }
     if (!text || !text.trim()) return;
     const targetRoom = await db.findRoomBySlug(roomSlug);
     if (!targetRoom) return;
-    if (targetRoom.isPremium && !user.isPremium) return;
+    if (!canAccessRoom(targetRoom, user)) return;
 
     const trimmed = text.trim().slice(0, 500);
     const cleaned = profanityFilter.clean(trimmed);
     const msg = await db.addMessage(targetRoom.slug, user.username, cleaned);
     io.to(targetRoom.slug).emit('message', msg);
+  });
+
+  socket.on('disconnect', () => {
+    if (knownUsername) unregisterSocket(knownUsername, socket.id);
   });
 });
 
