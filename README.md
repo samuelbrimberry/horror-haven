@@ -8,13 +8,17 @@ and an affiliate recommendations page.
 
 ```
 npm install
+cp .env.example .env   # then fill in DATABASE_URL and SESSION_SECRET
 npm start
 ```
 
 Then open http://localhost:3000
 
-Data (user accounts, chat history) is stored in `data/db.json`, created automatically
-on first run. Delete that file to reset everything.
+User accounts and chat history live in a Postgres database, connected via the
+`DATABASE_URL` environment variable. Tables are created automatically on startup
+if they don't exist yet (see `db.js`). For local development, point `DATABASE_URL`
+at the same Render Postgres instance you use in production (its "External Database
+URL," found on the database's Render dashboard page), or at a local Postgres install.
 
 ## How this makes money (and what to plug in for real)
 
@@ -78,13 +82,17 @@ WebSockets (Socket.IO) for real-time chat. Good low-cost options:
 Steps are roughly the same everywhere:
 1. Push this project to a GitHub repo.
 2. Connect the repo to your host, set the start command to `npm start`.
-3. Set environment variables: `SESSION_SECRET` (a long random string) and, once
-   you add Stripe, `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET`.
-4. Note: `data/db.json` is local disk storage — fine to start, but on most hosts
-   the filesystem isn't persistent across deploys/restarts. Once you have real
-   users, migrate `db.js` to a real database (Postgres via
-   [Railway](https://railway.app)/[Supabase](https://supabase.com), or SQLite on
-   a persistent volume) so accounts and chat history survive redeploys.
+3. Create a Postgres database on the same host (Render: New + → PostgreSQL, free
+   tier) and set `DATABASE_URL` on the web service to its connection string
+   (use the "Internal Database URL" when the web service and database are on
+   the same host/region — it's faster and doesn't count against external
+   bandwidth).
+4. Set `SESSION_SECRET` (a long random string) and, once you add Stripe,
+   `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET`.
+5. Sessions are still stored as files in `data/sessions` on local disk, which
+   resets on redeploy/restart — that just logs everyone out, it doesn't lose
+   accounts or chat history (those are in Postgres now). Fine for now; move to
+   a Redis-backed session store later if that becomes annoying at scale.
 
 ## Growing the community (this matters more than the code)
 
