@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — Horror Haven</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .admin-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    .admin-table th, .admin-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+    .admin-table th { color: var(--text-dim); font-weight: 600; }
+    .admin-msg { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    .admin-msg .body { flex: 1; }
+    .admin-msg .who { color: var(--gold); font-weight: 600; margin-right: 6px; }
+    .row-controls { display: flex; gap: 12px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand title-font" href="/">Horror Haven</a>
+    <div class="nav-links">
+      <a href="/app.html">Chat</a>
+      <a href="/settings.html">Settings</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding: 30px 24px 60px;">
+    <h1 class="title-font">Admin Dashboard</h1>
+    <div id="unauthorized" class="card" hidden>
+      <p>You don't have admin access. <a href="/app.html">Back to chat</a></p>
+    </div>
+
+    <div id="admin-content" hidden>
+      <section class="card" style="margin-bottom: 24px;">
+        <h2>Users</h2>
+        <table class="admin-table">
+          <thead>
+            <tr><th>Username</th><th>Premium</th><th>Admin</th></tr>
+          </thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Rooms &amp; Messages</h2>
+        <div class="row-controls">
+          <select id="room-select"></select>
+          <button class="btn btn-ghost" id="delete-room-btn">Delete room</button>
+        </div>
+        <div id="messages-body" style="margin-top: 16px;"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    let isAdmin = false;
+
+    async function init() {
+      const me = await (await fetch('/api/me')).json();
+      if (!me) {
+        window.location.href = '/login.html';
+        return;
+      }
+      isAdmin = !!me.isAdmin;
+      if (!isAdmin) {
+        document.getElementById('unauthorized').hidden = false;
+        return;
+      }
+      document.getElementById('admin-content').hidden = false;
+      await loadUsers();
+      await loadRoomSelect();
+    }
+
+    async function loadUsers() {
+      const users = await (await fetch('/api/admin/users')).json();
+      const body = document.getElementById('users-body');
+      body.innerHTML = '';
+      users.forEach((u) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${escapeHtml(u.username)}</td>
+          <td>${u.isPremium ? '✔' : '—'}</td>
+          <td>${u.isAdmin ? '✔' : '—'}</td>
+        `;
+        body.appendChild(tr);
+      });
+    }
+
+    async function loadRoomSelect() {
+      const rooms = await (await fetch('/api/rooms')).json();
+      const select = document.getElementById('room-select');
+      select.innerHTML = '';
+      rooms.forEach((r) => {
+        const opt = document.createElement('option');
+        opt.value = r.slug;
+        opt.textContent = `${r.name} (${r.category})`;
+        select.appendChild(opt);
+      });
+      select.addEventListener('change', () => loadMessages(select.value));
+      if (rooms.length) loadMessages(rooms[0].slug);
+
+      document.getElementById('delete-room-btn').addEventListener('click', async () => {
+        const slug = select.value;
+        if (!slug) return;
+        const res = await fetch(`/api/admin/rooms/${slug}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Could not delete room.');
+          return;
+        }
+        await loadRoomSelect();
+      });
+    }
+
+    async function loadMessages(roomSlug) {
+      const messages = await (await fetch(`/api/admin/messages/${roomSlug}`)).json();
+      const body = document.getElementById('messages-body');
+      body.innerHTML = '';
+      messages.forEach((m) => {
+        const row = document.createElement('div');
+        row.className = 'admin-msg';
+        row.innerHTML = `
+          <div class="body"><span class="who">${escapeHtml(m.username)}</span>${escapeHtml(m.text)}</div>
+        `;
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-ghost';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click', async () => {
+          await fetch(`/api/admin/messages/${m.id}`, { method: 'DELETE' });
+          loadMessages(roomSlug);
+        });
+        row.appendChild(delBtn);
+        body.appendChild(row);
+      });
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    init();
+  </script>
+</body>
+</html>

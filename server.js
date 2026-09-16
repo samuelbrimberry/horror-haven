@@ -8,6 +8,7 @@ const FileStore = require('session-file-store')(session);
 const bcrypt = require('bcryptjs');
 const { Server } = require('socket.io');
 const Stripe = require('stripe');
+const { Filter } = require('bad-words');
 
 const db = require('./db');
 
@@ -15,9 +16,11 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const profanityFilter = new Filter();
 
 const PORT = process.env.PORT || 3000;
 const ROOM_CATEGORIES = new Set(['movie', 'game', 'general']);
+const PROTECTED_ROOM_SLUGS = new Set(['general', 'support', 'vip']);
 
 function slugify(name) {
   return name
@@ -81,7 +84,13 @@ function requireAuth(req, res, next) {
 }
 
 function publicUser(user) {
-  return { id: user.id, username: user.username, isPremium: user.isPremium };
+  return { id: user.id, username: user.username, isPremium: user.isPremium, isAdmin: user.isAdmin };
+}
+
+async function requireAdmin(req, res, next) {
+  const user = req.session.userId ? await db.findUserById(req.session.userId) : null;
+  if (!user || !user.isAdmin) return res.status(403).json({ error: 'Admin access required.' });
+  next();
 }
 
 app.post('/api/register', async (req, res) => {
@@ -93,16 +102,24 @@ app.post('/api/register', async (req, res) => {
     return res.status(400).json({ error: 'That username is already taken.' });
   }
   const passwordHash = bcrypt.hashSync(password, 10);
-  const user = await db.createUser(username, passwordHash);
+  let user = await db.createUser(username, passwordHash);
+  const adminUsername = (process.env.ADMIN_USERNAME || '').toLowerCase();
+  if (adminUsername && user.username.toLowerCase() === adminUsername) {
+    user = await db.setAdmin(user.id, true);
+  }
   req.session.userId = user.id;
   res.json(publicUser(user));
 });
 
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body || {};
-  const user = await db.findUserByUsername(username || '');
+  let user = await db.findUserByUsername(username || '');
   if (!user || !bcrypt.compareSync(password || '', user.passwordHash)) {
     return res.status(401).json({ error: 'Invalid username or password.' });
+  }
+  const adminUsername = (process.env.ADMIN_USERNAME || '').toLowerCase();
+  if (adminUsername && user.username.toLowerCase() === adminUsername && !user.isAdmin) {
+    user = await db.setAdmin(user.id, true);
   }
   req.session.userId = user.id;
   res.json(publicUser(user));
@@ -171,6 +188,35 @@ app.post('/api/create-portal-session', requireAuth, async (req, res) => {
   res.json({ url: session.url });
 });
 
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  const users = await db.listUsers();
+  res.json(users.map((u) => ({
+    id: u.id,
+    username: u.username,
+    isPremium: u.isPremium,
+    isAdmin: u.isAdmin,
+    createdAt: u.createdAt,
+  })));
+});
+
+app.get('/api/admin/messages/:roomSlug', requireAdmin, async (req, res) => {
+  const messages = await db.getRecentMessages(req.params.roomSlug, 200);
+  res.json(messages);
+});
+
+app.delete('/api/admin/messages/:id', requireAdmin, async (req, res) => {
+  const deleted = await db.deleteMessage(Number(req.params.id));
+  res.json({ ok: deleted });
+});
+
+app.delete('/api/admin/rooms/:slug', requireAdmin, async (req, res) => {
+  if (PROTECTED_ROOM_SLUGS.has(req.params.slug)) {
+    return res.status(400).json({ error: 'This room is built-in and cannot be deleted.' });
+  }
+  const deleted = await db.deleteRoom(req.params.slug);
+  res.json({ ok: deleted });
+});
+
 io.on('connection', (socket) => {
   const getUser = () => {
     const uid = socket.request.session && socket.request.session.userId;
@@ -199,7 +245,10 @@ io.on('connection', (socket) => {
     const targetRoom = await db.findRoomBySlug(roomSlug);
     if (!targetRoom) return;
     if (targetRoom.isPremium && !user.isPremium) return;
-    const msg = await db.addMessage(targetRoom.slug, user.username, text.trim().slice(0, 500));
+
+    const trimmed = text.trim().slice(0, 500);
+    const cleaned = profanityFilter.clean(trimmed);
+    const msg = await db.addMessage(targetRoom.slug, user.username, cleaned);
     io.to(targetRoom.slug).emit('message', msg);
   });
 });

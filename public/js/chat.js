@@ -49,6 +49,8 @@ function renderUserBadge() {
 
   const upgradeBtn = document.getElementById('upgrade-btn');
   if (!currentUser.isPremium) upgradeBtn.hidden = false;
+
+  if (currentUser.isAdmin) document.getElementById('admin-link').hidden = false;
 }
 
 async function loadRooms() {

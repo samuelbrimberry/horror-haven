@@ -27,6 +27,7 @@ async function init() {
   await pool.query('CREATE INDEX IF NOT EXISTS messages_room_idx ON messages (room, id);');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS rooms (
@@ -65,6 +66,7 @@ function rowToUser(row) {
     createdAt: row.created_at,
     stripeCustomerId: row.stripe_customer_id,
     stripeSubscriptionId: row.stripe_subscription_id,
+    isAdmin: row.is_admin,
   };
 }
 
@@ -133,6 +135,16 @@ module.exports = {
     return rowToUser(rows[0]);
   },
 
+  async setAdmin(id, value) {
+    const { rows } = await pool.query('UPDATE users SET is_admin = $1 WHERE id = $2 RETURNING *', [value, id]);
+    return rowToUser(rows[0]);
+  },
+
+  async listUsers() {
+    const { rows } = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
+    return rows.map(rowToUser);
+  },
+
   async addMessage(room, username, text) {
     const { rows } = await pool.query(
       'INSERT INTO messages (room, username, text) VALUES ($1, $2, $3) RETURNING *',
@@ -147,6 +159,17 @@ module.exports = {
       [room, limit]
     );
     return rows.reverse().map(rowToMessage);
+  },
+
+  async deleteMessage(id) {
+    const { rowCount } = await pool.query('DELETE FROM messages WHERE id = $1', [id]);
+    return rowCount > 0;
+  },
+
+  async deleteRoom(slug) {
+    await pool.query('DELETE FROM messages WHERE room = $1', [slug]);
+    const { rowCount } = await pool.query('DELETE FROM rooms WHERE slug = $1', [slug]);
+    return rowCount > 0;
   },
 
   async listRooms() {
