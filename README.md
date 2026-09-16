@@ -54,15 +54,17 @@ Premium members. To run real ads:
    `pagead2.googlesyndication.com` and related AdSense domains.
 
 ### 3. Affiliate links (recommendations page)
-`public/recommendations.html` lists horror movies and games with placeholder
-"Watch it" / "Get it" buttons (`data-affiliate="..."` attributes).
-1. Sign up for [Amazon Associates](https://affiliate-program.amazon.com) for games/
-   merch, and/or a streaming affiliate program (e.g. JustWatch partner links) for
-   movies.
-2. Replace each button's `href="#"` with your real affiliate URL and remove the
-   placeholder `alert()` script at the bottom of the file.
-3. Add more titles over time — this page is the easiest one to expand for more
-   affiliate revenue without touching the chat app at all.
+`public/recommendations.html` lists horror movies and games, each linking to an
+Amazon search result tagged with the Associates tracking ID `horrorhaven05-20`
+(e.g. `https://www.amazon.com/s?k=<title>&tag=horrorhaven05-20`). Any purchase
+made after a visitor clicks through earns a commission.
+- To add more titles, copy a `.rec-card` block and point its link at
+  `https://www.amazon.com/s?k=<search terms>&tag=horrorhaven05-20`.
+- Search-result links work without knowing exact product IDs, but convert
+  better if you swap in a specific product's URL (with `?tag=horrorhaven05-20`
+  appended) once you know exactly which edition/platform to recommend.
+- Consider adding a second affiliate program for movie streaming/rental links
+  (e.g. a JustWatch partner account) alongside Amazon.
 
 ### Other easy add-ons
 - A donate link (Ko-fi / Buy Me a Coffee / Patreon) is already on the homepage —
