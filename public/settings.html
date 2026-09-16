@@ -45,9 +45,10 @@
       }
 
       document.getElementById('settings-username').textContent = user.username;
-      document.getElementById('settings-tier').innerHTML = user.isPremium
-        ? '<span class="badge gold">Premium</span>'
-        : '<span class="badge free">Free</span>';
+      let tierHtml = '<span class="badge free">Free</span>';
+      if (user.isPremium) tierHtml = '<span class="badge gold">Premium</span>';
+      if (user.isAdmin) tierHtml += ' <span class="badge gold">Admin (full access)</span>';
+      document.getElementById('settings-tier').innerHTML = tierHtml;
 
       if (user.isPremium) {
         document.getElementById('manage-btn').hidden = false;

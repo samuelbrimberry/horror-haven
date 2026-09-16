@@ -39,16 +39,17 @@ async function init() {
 
 function renderUserBadge() {
   const badge = document.getElementById('user-badge');
-  const tier = currentUser.isPremium
-    ? '<span class="badge gold">Premium</span>'
-    : '<span class="badge free">Free</span>';
+  const hasFullAccess = currentUser.isPremium || currentUser.isAdmin;
+  let tier = '<span class="badge free">Free</span>';
+  if (currentUser.isAdmin) tier = '<span class="badge gold">Admin</span>';
+  else if (currentUser.isPremium) tier = '<span class="badge gold">Premium</span>';
   badge.innerHTML = `${currentUser.username} ${tier}`;
 
   const adSlot = document.getElementById('ad-slot');
-  if (currentUser.isPremium) adSlot.hidden = true;
+  if (hasFullAccess) adSlot.hidden = true;
 
   const upgradeBtn = document.getElementById('upgrade-btn');
-  if (!currentUser.isPremium) upgradeBtn.hidden = false;
+  if (!hasFullAccess) upgradeBtn.hidden = false;
 
   if (currentUser.isAdmin) document.getElementById('admin-link').hidden = false;
 }
