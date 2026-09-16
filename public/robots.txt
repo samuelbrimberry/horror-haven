@@ -4,4 +4,4 @@ Disallow: /app.html
 Disallow: /settings.html
 Disallow: /admin.html
 
-Sitemap: https://horror-haven.onrender.com/sitemap.xml
+Sitemap: https://horrorhaven.org/sitemap.xml

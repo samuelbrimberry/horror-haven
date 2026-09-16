@@ -1,31 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://horror-haven.onrender.com/</loc>
+    <loc>https://horrorhaven.org/</loc>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://horror-haven.onrender.com/movies.html</loc>
+    <loc>https://horrorhaven.org/movies.html</loc>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://horror-haven.onrender.com/games.html</loc>
+    <loc>https://horrorhaven.org/games.html</loc>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://horror-haven.onrender.com/news.html</loc>
+    <loc>https://horrorhaven.org/news.html</loc>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://horror-haven.onrender.com/about.html</loc>
+    <loc>https://horrorhaven.org/about.html</loc>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://horror-haven.onrender.com/register.html</loc>
+    <loc>https://horrorhaven.org/register.html</loc>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://horror-haven.onrender.com/login.html</loc>
+    <loc>https://horrorhaven.org/login.html</loc>
     <priority>0.3</priority>
   </url>
 </urlset>
