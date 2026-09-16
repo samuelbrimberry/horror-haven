@@ -4,6 +4,7 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const session = require('express-session');
+const FileStore = require('session-file-store')(session);
 const bcrypt = require('bcryptjs');
 const { Server } = require('socket.io');
 
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const sessionMiddleware = session({
+  store: new FileStore({ path: path.join(__dirname, 'data', 'sessions') }),
   secret: process.env.SESSION_SECRET || 'horror-haven-dev-secret-change-me',
   resave: false,
   saveUninitialized: false,
