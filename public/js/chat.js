@@ -23,6 +23,23 @@ let socket = null;
 let roomsCache = [];
 let pendingAttachment = null;
 
+const AD_UNITS = [
+  { title: 'Ecoflarix 4-in-1 Milk Frother', price: '$54.99', url: 'https://amzn.to/4AmKpjy' },
+  { title: 'LEGO Star Wars Advent Calendar 2026', price: '$35.00', url: 'https://amzn.to/4dJdyLV' },
+];
+
+function renderAd() {
+  const container = document.getElementById('ad-content');
+  if (!container) return;
+  const ad = AD_UNITS[Math.floor(Math.random() * AD_UNITS.length)];
+  container.innerHTML = `
+    <a class="ad-unit" href="${ad.url}" target="_blank" rel="noopener sponsored">
+      <span class="ad-label">Ad</span>
+      <span><span class="ad-title">${escapeHtml(ad.title)}</span><span class="ad-price">${escapeHtml(ad.price)}</span></span>
+    </a>
+  `;
+}
+
 async function init() {
   const res = await fetch('/api/me');
   currentUser = await res.json();
@@ -48,6 +65,7 @@ function renderUserBadge() {
 
   document.getElementById('ad-slot').hidden = hasFullAccess;
   document.getElementById('upgrade-btn').hidden = hasFullAccess;
+  if (!hasFullAccess) renderAd();
 
   if (currentUser.isAdmin) document.getElementById('admin-link').hidden = false;
 }
