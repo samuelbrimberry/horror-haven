@@ -80,6 +80,36 @@ async function init() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  await pool.query('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS is_private BOOLEAN NOT NULL DEFAULT FALSE;');
+  await pool.query('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS access_mode TEXT;');
+  await pool.query('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS invite_code TEXT;');
+  await pool.query('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS password_hash TEXT;');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS rooms_invite_code_idx ON rooms (invite_code) WHERE invite_code IS NOT NULL;');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS room_members (
+      room_id INTEGER NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (room_id, user_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS friend_requests (
+      id SERIAL PRIMARY KEY,
+      requester_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      recipient_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS friend_requests_pending_idx
+      ON friend_requests (LEAST(requester_id, recipient_id), GREATEST(requester_id, recipient_id))
+      WHERE status = 'pending';
+  `);
 }
 
 function rowToUser(row) {
@@ -135,6 +165,20 @@ function rowToRoom(row) {
     isPremium: row.is_premium,
     createdBy: row.created_by,
     createdAt: row.created_at,
+    isPrivate: row.is_private,
+    accessMode: row.access_mode,
+  };
+}
+
+function rowToFriendRequest(row) {
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    requesterId: row.requester_id,
+    recipientId: row.recipient_id,
+    status: row.status,
+    createdAt: row.created_at,
+    otherUsername: row.other_username,
   };
 }
 
@@ -241,7 +285,7 @@ module.exports = {
   },
 
   async listRooms() {
-    const { rows } = await pool.query('SELECT * FROM rooms ORDER BY category, name');
+    const { rows } = await pool.query('SELECT * FROM rooms WHERE is_private = FALSE ORDER BY category, name');
     return rows.map(rowToRoom);
   },
 
@@ -250,16 +294,153 @@ module.exports = {
     return rowToRoom(rows[0]);
   },
 
-  async createRoom(slug, name, category, createdBy) {
+  async createRoom(slug, name, category, createdBy, opts = {}) {
+    const { isPrivate = false, accessMode = null, inviteCode = null, passwordHash = null } = opts;
     const { rows } = await pool.query(
-      `INSERT INTO rooms (slug, name, category, is_premium, created_by)
-       VALUES ($1, $2, $3, FALSE, $4)
+      `INSERT INTO rooms (slug, name, category, is_premium, created_by, is_private, access_mode, invite_code, password_hash)
+       VALUES ($1, $2, $3, FALSE, $4, $5, $6, $7, $8)
        ON CONFLICT (slug) DO NOTHING
        RETURNING *`,
-      [slug, name, category, createdBy]
+      [slug, name, category, createdBy, isPrivate, accessMode, inviteCode, passwordHash]
     );
     if (rows[0]) return rowToRoom(rows[0]);
     return this.findRoomBySlug(slug);
+  },
+
+  async listMyPrivateRooms(userId) {
+    const { rows } = await pool.query(
+      `SELECT r.* FROM rooms r
+       JOIN room_members m ON m.room_id = r.id
+       WHERE m.user_id = $1 AND r.is_private = TRUE AND r.category != 'dm'
+       ORDER BY r.name`,
+      [userId]
+    );
+    return rows.map(rowToRoom);
+  },
+
+  async addRoomMember(roomId, userId) {
+    await pool.query(
+      'INSERT INTO room_members (room_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [roomId, userId]
+    );
+  },
+
+  async isRoomMember(roomId, userId) {
+    const { rows } = await pool.query(
+      'SELECT 1 FROM room_members WHERE room_id = $1 AND user_id = $2',
+      [roomId, userId]
+    );
+    return rows.length > 0;
+  },
+
+  async findRoomByInviteCode(code) {
+    const { rows } = await pool.query('SELECT * FROM rooms WHERE invite_code = $1', [code]);
+    return rowToRoom(rows[0]);
+  },
+
+  async findRoomPasswordHash(roomId) {
+    const { rows } = await pool.query('SELECT password_hash FROM rooms WHERE id = $1', [roomId]);
+    return rows[0] ? rows[0].password_hash : null;
+  },
+
+  async createFriendRequest(requesterId, recipientId) {
+    const { rows } = await pool.query(
+      'INSERT INTO friend_requests (requester_id, recipient_id) VALUES ($1, $2) RETURNING *',
+      [requesterId, recipientId]
+    );
+    return rowToFriendRequest(rows[0]);
+  },
+
+  async findPendingRequestBetween(userIdA, userIdB) {
+    const { rows } = await pool.query(
+      `SELECT * FROM friend_requests
+       WHERE status = 'pending'
+         AND ((requester_id = $1 AND recipient_id = $2) OR (requester_id = $2 AND recipient_id = $1))`,
+      [userIdA, userIdB]
+    );
+    return rowToFriendRequest(rows[0]);
+  },
+
+  async areFriends(userIdA, userIdB) {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM friend_requests
+       WHERE status = 'accepted'
+         AND ((requester_id = $1 AND recipient_id = $2) OR (requester_id = $2 AND recipient_id = $1))`,
+      [userIdA, userIdB]
+    );
+    return rows.length > 0;
+  },
+
+  async findFriendRequestById(id) {
+    const { rows } = await pool.query('SELECT * FROM friend_requests WHERE id = $1', [id]);
+    return rowToFriendRequest(rows[0]);
+  },
+
+  async setFriendRequestStatus(id, status) {
+    const { rows } = await pool.query(
+      'UPDATE friend_requests SET status = $1 WHERE id = $2 RETURNING *',
+      [status, id]
+    );
+    return rowToFriendRequest(rows[0]);
+  },
+
+  async listIncomingRequests(userId) {
+    const { rows } = await pool.query(
+      `SELECT fr.*, u.username AS other_username FROM friend_requests fr
+       JOIN users u ON u.id = fr.requester_id
+       WHERE fr.recipient_id = $1 AND fr.status = 'pending'
+       ORDER BY fr.created_at DESC`,
+      [userId]
+    );
+    return rows.map(rowToFriendRequest);
+  },
+
+  async listOutgoingRequests(userId) {
+    const { rows } = await pool.query(
+      `SELECT fr.*, u.username AS other_username FROM friend_requests fr
+       JOIN users u ON u.id = fr.recipient_id
+       WHERE fr.requester_id = $1 AND fr.status = 'pending'
+       ORDER BY fr.created_at DESC`,
+      [userId]
+    );
+    return rows.map(rowToFriendRequest);
+  },
+
+  async listFriends(userId) {
+    const { rows } = await pool.query(
+      `SELECT u.id, u.username FROM friend_requests fr
+       JOIN users u ON u.id = CASE WHEN fr.requester_id = $1 THEN fr.recipient_id ELSE fr.requester_id END
+       WHERE fr.status = 'accepted' AND (fr.requester_id = $1 OR fr.recipient_id = $1)
+       ORDER BY u.username`,
+      [userId]
+    );
+    return rows;
+  },
+
+  async findOrCreateDmRoom(userIdA, userIdB) {
+    const [lo, hi] = [userIdA, userIdB].sort((a, b) => a - b);
+    const slug = `dm-${lo}-${hi}`;
+    let room = await this.findRoomBySlug(slug);
+    if (!room) {
+      room = await this.createRoom(slug, 'Direct Message', 'dm', null, { isPrivate: true });
+      await this.addRoomMember(room.id, lo);
+      await this.addRoomMember(room.id, hi);
+    }
+    return room;
+  },
+
+  async listMyDms(userId) {
+    const { rows } = await pool.query(
+      `SELECT r.*, u.username AS other_username, u.id AS other_user_id
+       FROM rooms r
+       JOIN room_members m ON m.room_id = r.id AND m.user_id = $1
+       JOIN room_members m2 ON m2.room_id = r.id AND m2.user_id != $1
+       JOIN users u ON u.id = m2.user_id
+       WHERE r.category = 'dm'
+       ORDER BY r.created_at DESC`,
+      [userId]
+    );
+    return rows.map((row) => ({ ...rowToRoom(row), otherUsername: row.other_username, otherUserId: row.other_user_id }));
   },
 
   async createReport({ messageId, room, reportedUserId, reportedUsername, reporterUsername, messageText, reason }) {

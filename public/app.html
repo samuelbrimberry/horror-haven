@@ -18,6 +18,7 @@
       <a href="/about.html">About</a>
       <a href="/settings.html">Settings</a>
       <a href="/admin.html" id="admin-link" hidden>Admin</a>
+      <button class="btn btn-ghost" id="friends-btn">👥 Friends<span id="friends-badge" class="ping-badge" hidden></span></button>
       <span id="user-badge"></span>
       <button class="btn btn-ghost" id="logout-btn">Log out</button>
     </div>
@@ -32,8 +33,24 @@
           <option value="game">Game</option>
           <option value="general">General</option>
         </select>
+        <label class="private-toggle">
+          <input type="checkbox" id="new-room-private" /> Make it a private room
+        </label>
+        <select id="new-room-access-mode" hidden>
+          <option value="invite">Invite link only</option>
+          <option value="password">Password protected</option>
+        </select>
+        <input id="new-room-password" placeholder="Room password" maxlength="60" autocomplete="off" hidden />
         <button class="btn btn-ghost btn-block" type="submit">+ New room</button>
       </form>
+
+      <form id="join-private-form" class="new-room-form">
+        <input id="join-invite-code" placeholder="Invite code" maxlength="40" autocomplete="off" />
+        <input id="join-room-name" placeholder="...or exact Room ID" maxlength="80" autocomplete="off" />
+        <input id="join-room-password" type="password" placeholder="Password (if any)" maxlength="60" autocomplete="off" />
+        <button class="btn btn-ghost btn-block" type="submit">Join private room</button>
+      </form>
+
       <div id="room-buttons"></div>
     </aside>
 
@@ -59,6 +76,24 @@
         <input id="chat-text" placeholder="Say something..." autocomplete="off" maxlength="500" />
         <button class="btn" type="submit">Send</button>
       </form>
+    </div>
+  </div>
+
+  <div id="friends-overlay" class="friends-overlay" hidden>
+    <div class="friends-panel">
+      <div class="friends-panel-header">
+        <h3>Friends</h3>
+        <button class="btn btn-ghost" id="friends-close-btn">Close</button>
+      </div>
+
+      <form id="add-friend-form" class="add-friend-form">
+        <input id="add-friend-username" placeholder="Username to add..." maxlength="20" autocomplete="off" />
+        <button class="btn" type="submit">Send request</button>
+      </form>
+
+      <div id="friends-incoming" class="friends-section"></div>
+      <div id="friends-outgoing" class="friends-section"></div>
+      <div id="friends-list" class="friends-section"></div>
     </div>
   </div>
 

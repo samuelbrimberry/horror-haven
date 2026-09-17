@@ -53,6 +53,28 @@ async function init() {
   await loadRooms();
   connectSocket();
   setupUi();
+  await loadFriends();
+  await joinFromInviteLink();
+}
+
+async function joinFromInviteLink() {
+  const params = new URLSearchParams(window.location.search);
+  const invite = params.get('invite');
+  if (!invite) return;
+  window.history.replaceState({}, '', '/app.html');
+
+  const res = await fetch('/api/rooms/private/join', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ inviteCode: invite }),
+  });
+  const room = await res.json();
+  if (!res.ok) {
+    appendSystemMessage(room.error || 'Could not join that room.');
+    return;
+  }
+  await loadRooms();
+  switchRoom(room, true);
 }
 
 function renderUserBadge() {
@@ -71,8 +93,15 @@ function renderUserBadge() {
 }
 
 async function loadRooms() {
-  const res = await fetch('/api/rooms');
-  roomsCache = await res.json();
+  const [publicRes, privateRes, dmRes] = await Promise.all([
+    fetch('/api/rooms'),
+    fetch('/api/rooms/private'),
+    fetch('/api/dms'),
+  ]);
+  roomsCache = await publicRes.json();
+  const privateRooms = await privateRes.json();
+  const dms = await dmRes.json();
+
   const container = document.getElementById('room-buttons');
   container.innerHTML = '';
 
@@ -94,6 +123,36 @@ async function loadRooms() {
       container.appendChild(btn);
     });
   });
+
+  if (privateRooms.length > 0) {
+    const heading = document.createElement('div');
+    heading.className = 'room-section-title';
+    heading.textContent = '🔒 Private Rooms';
+    container.appendChild(heading);
+
+    privateRooms.forEach((room) => {
+      const btn = document.createElement('button');
+      btn.className = 'room-btn' + (room.slug === currentRoom ? ' active' : '');
+      btn.textContent = room.name;
+      btn.addEventListener('click', () => switchRoom(room, true));
+      container.appendChild(btn);
+    });
+  }
+
+  if (dms.length > 0) {
+    const heading = document.createElement('div');
+    heading.className = 'room-section-title';
+    heading.textContent = '✉️ Direct Messages';
+    container.appendChild(heading);
+
+    dms.forEach((dm) => {
+      const btn = document.createElement('button');
+      btn.className = 'room-btn' + (dm.slug === currentRoom ? ' active' : '');
+      btn.textContent = dm.otherUsername;
+      btn.addEventListener('click', () => switchRoom({ ...dm, name: dm.otherUsername }, true));
+      container.appendChild(btn);
+    });
+  }
 }
 
 function switchRoom(room, unlocked) {
@@ -207,6 +266,7 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+
 function showAttachmentPreview() {
   const preview = document.getElementById('attachment-preview');
   if (!pendingAttachment) {
@@ -227,6 +287,84 @@ function showAttachmentPreview() {
     showAttachmentPreview();
   });
   preview.appendChild(removeBtn);
+}
+
+async function loadFriends() {
+  const res = await fetch('/api/friends');
+  if (!res.ok) return;
+  const data = await res.json();
+  renderFriendsPanel(data);
+
+  const badge = document.getElementById('friends-badge');
+  if (data.incoming.length > 0) {
+    badge.hidden = false;
+    badge.textContent = String(data.incoming.length);
+  } else {
+    badge.hidden = true;
+  }
+}
+
+function renderFriendsPanel(data) {
+  const incomingEl = document.getElementById('friends-incoming');
+  const outgoingEl = document.getElementById('friends-outgoing');
+  const friendsEl = document.getElementById('friends-list');
+
+  incomingEl.innerHTML = data.incoming.length
+    ? '<div class="room-section-title">Incoming requests</div>' + data.incoming.map((r) => `
+      <div class="friend-row" data-request-id="${r.id}">
+        <span>${escapeHtml(r.otherUsername)}</span>
+        <span class="row-actions">
+          <button class="btn btn-ghost accept-request-btn">Accept</button>
+          <button class="btn btn-ghost decline-request-btn">Decline</button>
+        </span>
+      </div>`).join('')
+    : '';
+
+  outgoingEl.innerHTML = data.outgoing.length
+    ? '<div class="room-section-title">Pending (sent by you)</div>' + data.outgoing.map((r) => `
+      <div class="friend-row"><span>${escapeHtml(r.otherUsername)}</span><span class="badge free">Pending</span></div>`).join('')
+    : '';
+
+  friendsEl.innerHTML = data.friends.length
+    ? '<div class="room-section-title">Friends</div>' + data.friends.map((f) => `
+      <div class="friend-row" data-username="${escapeHtml(f.username)}">
+        <span>${escapeHtml(f.username)}</span>
+        <span class="row-actions"><button class="btn message-friend-btn">Message</button></span>
+      </div>`).join('')
+    : '<div class="room-section-title">Friends</div><p style="color: var(--text-dim); font-size: 0.88rem;">No friends yet — add one above.</p>';
+
+  incomingEl.querySelectorAll('.accept-request-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.target.closest('.friend-row').dataset.requestId;
+      await fetch(`/api/friends/${id}/accept`, { method: 'POST' });
+      await loadFriends();
+    });
+  });
+  incomingEl.querySelectorAll('.decline-request-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.target.closest('.friend-row').dataset.requestId;
+      await fetch(`/api/friends/${id}/decline`, { method: 'POST' });
+      await loadFriends();
+    });
+  });
+  friendsEl.querySelectorAll('.message-friend-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const username = e.target.closest('.friend-row').dataset.username;
+      await openDm(username);
+    });
+  });
+}
+
+async function openDm(username) {
+  const res = await fetch(`/api/dms/${encodeURIComponent(username)}`, { method: 'POST' });
+  const room = await res.json();
+  if (!res.ok) {
+    appendSystemMessage(room.error || 'Could not open that conversation.');
+    return;
+  }
+  document.getElementById('friends-overlay').hidden = true;
+  await loadRooms();
+  switchRoom({ ...room, name: room.otherUsername }, true);
 }
 
 function setupUi() {
@@ -267,26 +405,111 @@ function setupUi() {
     window.location.href = '/';
   });
 
+  const privateCheckbox = document.getElementById('new-room-private');
+  const categorySelect = document.getElementById('new-room-category');
+  const accessModeSelect = document.getElementById('new-room-access-mode');
+  const passwordInput = document.getElementById('new-room-password');
+
+  function syncPrivateRoomFields() {
+    const isPrivate = privateCheckbox.checked;
+    categorySelect.hidden = isPrivate;
+    accessModeSelect.hidden = !isPrivate;
+    passwordInput.hidden = !isPrivate || accessModeSelect.value !== 'password';
+  }
+
+  privateCheckbox.addEventListener('change', syncPrivateRoomFields);
+  accessModeSelect.addEventListener('change', syncPrivateRoomFields);
+
   document.getElementById('new-room-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const nameInput = document.getElementById('new-room-name');
-    const categorySelect = document.getElementById('new-room-category');
     const name = nameInput.value.trim();
     if (!name) return;
 
-    const res = await fetch('/api/rooms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, category: categorySelect.value }),
-    });
+    let res;
+    if (privateCheckbox.checked) {
+      res = await fetch('/api/rooms/private', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, accessMode: accessModeSelect.value, password: passwordInput.value }),
+      });
+    } else {
+      res = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, category: categorySelect.value }),
+      });
+    }
     const room = await res.json();
     if (!res.ok) {
       appendSystemMessage(room.error || 'Could not create room.');
       return;
     }
     nameInput.value = '';
+    passwordInput.value = '';
+    if (room.inviteCode) {
+      appendSystemMessage(`Private room created. Share this invite link: ${window.location.origin}/app.html?invite=${room.inviteCode}`);
+    } else {
+      appendSystemMessage(`Private room created. Share this Room ID (and your password) with friends: ${room.slug}`);
+    }
     await loadRooms();
     switchRoom(room, true);
+  });
+
+  document.getElementById('join-private-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const inviteInput = document.getElementById('join-invite-code');
+    const nameInput = document.getElementById('join-room-name');
+    const passwordInput2 = document.getElementById('join-room-password');
+    const inviteCode = inviteInput.value.trim();
+    const slugExact = nameInput.value.trim();
+
+    if (!inviteCode && !slugExact) return;
+
+    const res = await fetch('/api/rooms/private/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviteCode: inviteCode || undefined, slug: slugExact || undefined, password: passwordInput2.value }),
+    });
+    const room = await res.json();
+    if (!res.ok) {
+      appendSystemMessage(room.error || 'Could not join that room.');
+      return;
+    }
+    inviteInput.value = '';
+    nameInput.value = '';
+    passwordInput2.value = '';
+    await loadRooms();
+    switchRoom(room, true);
+  });
+
+  document.getElementById('friends-btn').addEventListener('click', async () => {
+    document.getElementById('friends-overlay').hidden = false;
+    await loadFriends();
+  });
+
+  document.getElementById('friends-close-btn').addEventListener('click', () => {
+    document.getElementById('friends-overlay').hidden = true;
+  });
+
+  document.getElementById('add-friend-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('add-friend-username');
+    const username = input.value.trim();
+    if (!username) return;
+
+    const res = await fetch('/api/friends/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      appendSystemMessage(data.error || 'Could not send friend request.');
+      return;
+    }
+    input.value = '';
+    await loadFriends();
   });
 
   document.getElementById('upgrade-btn').addEventListener('click', async () => {

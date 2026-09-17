@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const path = require('path');
+const crypto = require('crypto');
 const http = require('http');
 const express = require('express');
 const session = require('express-session');
@@ -62,7 +63,11 @@ function kickUser(username) {
   });
 }
 
-function canAccessRoom(room, user) {
+async function canAccessRoom(room, user) {
+  if (room.isPrivate) {
+    if (!user) return false;
+    return db.isRoomMember(room.id, user.id);
+  }
   return !room.isPremium || (user && (user.isPremium || user.isAdmin));
 }
 
@@ -326,6 +331,128 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
   res.json(room);
 });
 
+app.post('/api/rooms/private', requireAuth, async (req, res) => {
+  const { name, accessMode, password } = req.body || {};
+  if (!name || !name.trim() || name.trim().length > 60) {
+    return res.status(400).json({ error: 'Room name must be 1-60 characters.' });
+  }
+  if (accessMode !== 'invite' && accessMode !== 'password') {
+    return res.status(400).json({ error: 'Access mode must be "invite" or "password".' });
+  }
+  if (accessMode === 'password' && (!password || password.length < 4)) {
+    return res.status(400).json({ error: 'Password must be at least 4 characters.' });
+  }
+
+  const slugBase = slugify(name) || 'room';
+  const slug = `${slugBase}-${crypto.randomBytes(3).toString('hex')}`;
+  const inviteCode = accessMode === 'invite' ? crypto.randomBytes(6).toString('hex') : null;
+  const passwordHash = accessMode === 'password' ? bcrypt.hashSync(password, 10) : null;
+
+  const user = await db.findUserById(req.session.userId);
+  const room = await db.createRoom(slug, name.trim(), 'private', user.username, {
+    isPrivate: true,
+    accessMode,
+    inviteCode,
+    passwordHash,
+  });
+  await db.addRoomMember(room.id, user.id);
+
+  res.json({ ...room, inviteCode: accessMode === 'invite' ? inviteCode : undefined });
+});
+
+app.get('/api/rooms/private', requireAuth, async (req, res) => {
+  const rooms = await db.listMyPrivateRooms(req.session.userId);
+  res.json(rooms);
+});
+
+app.post('/api/rooms/private/join', requireAuth, async (req, res) => {
+  const { inviteCode, slug, password } = req.body || {};
+  let room;
+
+  if (inviteCode) {
+    room = await db.findRoomByInviteCode(String(inviteCode).trim());
+    if (!room) return res.status(404).json({ error: 'Invalid or expired invite link.' });
+  } else if (slug) {
+    room = await db.findRoomBySlug(String(slug).trim());
+    if (!room || !room.isPrivate) return res.status(404).json({ error: 'Room not found.' });
+    if (room.accessMode === 'password') {
+      const hash = await db.findRoomPasswordHash(room.id);
+      if (!password || !bcrypt.compareSync(password, hash || '')) {
+        return res.status(401).json({ error: 'Incorrect password.' });
+      }
+    }
+  } else {
+    return res.status(400).json({ error: 'Provide an invite code, or a room name and password.' });
+  }
+
+  await db.addRoomMember(room.id, req.session.userId);
+  res.json(room);
+});
+
+app.post('/api/friends/request', requireAuth, async (req, res) => {
+  const { username } = req.body || {};
+  const target = await db.findUserByUsername(username || '');
+  if (!target) return res.status(404).json({ error: 'User not found.' });
+  if (target.id === req.session.userId) {
+    return res.status(400).json({ error: "You can't friend yourself." });
+  }
+  if (await db.areFriends(req.session.userId, target.id)) {
+    return res.status(400).json({ error: 'You are already friends.' });
+  }
+  if (await db.findPendingRequestBetween(req.session.userId, target.id)) {
+    return res.status(400).json({ error: 'A friend request is already pending between you two.' });
+  }
+
+  const request = await db.createFriendRequest(req.session.userId, target.id);
+  res.json(request);
+});
+
+app.get('/api/friends', requireAuth, async (req, res) => {
+  const [friends, incoming, outgoing] = await Promise.all([
+    db.listFriends(req.session.userId),
+    db.listIncomingRequests(req.session.userId),
+    db.listOutgoingRequests(req.session.userId),
+  ]);
+  res.json({ friends, incoming, outgoing });
+});
+
+app.post('/api/friends/:id/accept', requireAuth, async (req, res) => {
+  const request = await db.findFriendRequestById(Number(req.params.id));
+  if (!request || request.recipientId !== req.session.userId || request.status !== 'pending') {
+    return res.status(404).json({ error: 'Friend request not found.' });
+  }
+  const updated = await db.setFriendRequestStatus(request.id, 'accepted');
+  res.json(updated);
+});
+
+app.post('/api/friends/:id/decline', requireAuth, async (req, res) => {
+  const request = await db.findFriendRequestById(Number(req.params.id));
+  if (!request || request.recipientId !== req.session.userId || request.status !== 'pending') {
+    return res.status(404).json({ error: 'Friend request not found.' });
+  }
+  const updated = await db.setFriendRequestStatus(request.id, 'declined');
+  res.json(updated);
+});
+
+app.get('/api/dms', requireAuth, async (req, res) => {
+  const dms = await db.listMyDms(req.session.userId);
+  res.json(dms);
+});
+
+app.post('/api/dms/:username', requireAuth, async (req, res) => {
+  const target = await db.findUserByUsername(req.params.username);
+  if (!target) return res.status(404).json({ error: 'User not found.' });
+  if (target.id === req.session.userId) {
+    return res.status(400).json({ error: "You can't message yourself." });
+  }
+  if (!(await db.areFriends(req.session.userId, target.id))) {
+    return res.status(403).json({ error: 'You can only message friends. Send a friend request first.' });
+  }
+
+  const room = await db.findOrCreateDmRoom(req.session.userId, target.id);
+  res.json({ ...room, otherUsername: target.username });
+});
+
 app.post('/api/create-portal-session', requireAuth, async (req, res) => {
   const user = await db.findUserById(req.session.userId);
   if (!user.stripeCustomerId) {
@@ -442,8 +569,8 @@ io.on('connection', (socket) => {
     const targetRoom = await db.findRoomBySlug(roomSlug);
     if (!targetRoom) return;
     const user = await getUser();
-    if (!canAccessRoom(targetRoom, user)) {
-      socket.emit('error-message', `${targetRoom.name} is for premium members only.`);
+    if (!(await canAccessRoom(targetRoom, user))) {
+      socket.emit('error-message', targetRoom.isPrivate ? 'You do not have access to this room.' : `${targetRoom.name} is for premium members only.`);
       return;
     }
     socket.join(targetRoom.slug);
@@ -468,7 +595,7 @@ io.on('connection', (socket) => {
 
     const targetRoom = await db.findRoomBySlug(roomSlug);
     if (!targetRoom) return;
-    if (!canAccessRoom(targetRoom, user)) return;
+    if (!(await canAccessRoom(targetRoom, user))) return;
 
     const cleaned = trimmed ? profanityFilter.clean(trimmed) : '';
     const msg = await db.addMessage(
