@@ -150,14 +150,16 @@ async function requireAdmin(req, res, next) {
 
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body || {};
-  if (!username || !password || username.length < 3 || password.length < 6) {
-    return res.status(400).json({ error: 'Username must be 3+ chars and password 6+ chars.' });
+  const usernameError = validateUsername(username);
+  if (usernameError) return res.status(400).json({ error: usernameError });
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be 6+ characters.' });
   }
   if (await db.findUserByUsername(username)) {
     return res.status(400).json({ error: 'That username is already taken.' });
   }
   const passwordHash = bcrypt.hashSync(password, 10);
-  let user = await db.createUser(username, passwordHash);
+  let user = await db.createUser(username.trim(), passwordHash);
   const adminUsername = (process.env.ADMIN_USERNAME || '').toLowerCase();
   if (adminUsername && user.username.toLowerCase() === adminUsername) {
     user = await db.setAdmin(user.id, true);
@@ -194,9 +196,15 @@ app.get('/api/me', async (req, res) => {
 
 const FREE_USERNAME_CHANGES_PER_30_DAYS = 2;
 
+const USERNAME_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 function validateUsername(username) {
-  if (!username || username.trim().length < 3 || username.trim().length > 20) {
+  const trimmed = (username || '').trim();
+  if (trimmed.length < 3 || trimmed.length > 20) {
     return 'Username must be 3-20 characters.';
+  }
+  if (!USERNAME_PATTERN.test(trimmed)) {
+    return 'Username can only contain letters, numbers, underscores, and hyphens.';
   }
   return null;
 }

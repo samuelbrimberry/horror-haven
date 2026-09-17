@@ -78,6 +78,12 @@ a { color: var(--accent-bright); }
 
 .nav-links a:hover { color: var(--text); }
 
+.nav-username {
+  color: var(--gold);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-block;
